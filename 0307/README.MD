@@ -126,6 +126,7 @@
 $ sudo 명령어
 $ sudo apt install gcc # gcc 컴파일러 설치
 $ sudo passwd root # root 패스워드 설정
+```
 
 # 핵심 개념 
 ## 유닉스 시스템의 특징
