@@ -62,4 +62,56 @@
 - 네트워크를 통해 정보를 주고받을 수 있도록 관리한다. 
 
 ## 주변장치 관리(Device management) 
--모니터, 키보드, 마우스와 같은 장치를 사용할 수 있도록 관리한다.
+-모니터, 키보드, 마우스와 같은 장치를 사용할 수 있도록 관리한다. 
+
+# 리눅스 설치 
+## 배포판
+- 커널은 공유함.
+- 배포판마다 조금씩 다른 데스크톱 환경이나 응용 프로그램 제공
+- 상업용 배포판 : 레드햇(RedHat)
+- 무료 배포판
+  - 우분투(Ubuntu), CentOS, 페도라(Fedora) 등
+
+## 데스크톱 환경
+- 그래픽 사용자 인터페이스(GUI)
+- 데스크톱 환경에 따라 사용방법이나 응용 프로그램이 조금씩 다름
+- GNOME, KDE
+
+# 리눅스 설치 방법 
+## 내 PC에 직접 설치
+- 배포판(iso 파일)을 다운받아
+- DVD 또는 USB 형태로 설치 디스크를 만들어 설치
+
+## 설치 디스크 만들기
+### DVD 설치 디스크 굽기(Burning)
+- 배포판 파일을 빈 DVD에 복사하는 과정
+- 디스크 이미지 버너(isoburn.exe) 이용
+
+### USB 설치 디스크
+- 유니버설 USB 인스톨러(Universal USB Installer)  
+  [링크](http://www.pendrivelinux.com/universal-usb-installer-easy-as-1-2-3/) 
+
+# 우분투 설치 
+## 우분투 리눅스
+- PC에서 리눅스를 쉽게 사용할 수 있게 만든 배포판
+- 데비안 배포판을 바탕으로 만들어짐.
+- 사용자가 쉽게 설치하고 사용할 수 있도록 설계
+
+## 우분투 리눅스 설치
+- 우분투 데스크탑 다운로드 [우분투 데스크탑 다운로드 링크](http://www.ubuntu.com/download/desktop)
+- 주요 버전 20.04 LTS, 22.04 LTS
+- 우분투 데스크탑 설치 과정 [설치 과정 안내 링크](http://www.ubuntu.com/download/desktop/install-ubuntu-desktop)
+
+# 가상 머신(Virtual Machine)
+- 컴퓨터 하드웨어(CPU, MEMORY, DISK 등)를 추상화
+- 마치 실제 하드웨어와 같은 환경을 소프트웨어로 제공.
+- MS 윈도에 가상 머신 설치하고 그 위에 리눅스 설치 가능.
+  - MS 윈도는 호스트 운영체제, 리눅스는 게스트 운영체제
+
+# 가상 머신 소프트웨어
+## VirtualBox
+- [VirtualBox 공식 사이트](https://www.virtualbox.org)
+- Oracle 사에서 제공하는 무료 소프트웨어
+
+## VMware Workstation Player
+- 유료 소프트웨어이나 비상업적 개인 용도로는 무료
