@@ -115,3 +115,14 @@
 
 ## VMware Workstation Player
 - 유료 소프트웨어이나 비상업적 개인 용도로는 무료
+
+# 슈퍼 유저  
+## 슈퍼유저(superuser)
+- 시스템을 관리할 수 있는 사용자로
+- 슈퍼유저가 사용하는 계정이 `root`이다
+
+## sudo 명령어 사용
+```bash
+$ sudo 명령어
+$ sudo apt install gcc # gcc 컴파일러 설치
+$ sudo passwd root # root 패스워드 설정
