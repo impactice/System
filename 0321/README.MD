@@ -174,3 +174,25 @@ $ which pwd
 $ which passwd
 /bin/passwd 
 ``` 
+
+## 디렉터리 명령어 
+
+### 현재 작업 디렉터리 출력: pwd(print working directory) 
+- 사용법 
+``` 
+$ pwd
+``` 
+현재 작업 디렉터리의 절대 경로명을 출력한다. 
+
+- 현재 작업 디렉터리(current working directory) 
+  - 현재 작업 중인 디렉터리 
+  - 로그인 하면 홈 디렉터리에서부터 작업이 시작된다.  
+
+- 예 
+``` 
+$ pwd
+/home/chang/바탕화면
+$ cd ~
+$ pwd
+/home/chang 
+``` 
