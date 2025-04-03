@@ -282,6 +282,7 @@ cs1.txt
 
 ### ls 명령어 옵션 
 - 주요 옵션 
+
 ![Image](https://github.com/user-attachments/assets/64f91472-859c-4b3a-bcb7-57b6c2552da1) 
 
 - ls -s 
