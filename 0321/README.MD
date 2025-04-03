@@ -311,4 +311,18 @@ $ ls -a
   - 파일 속성(file attribute) 출력 
   - 블록 수, 파일 종류, 접근권한, 링크 수, 소유자명, 크기, 수정 시간, 파일 이름 등 
 
-![Image](https://github.com/user-attachments/assets/5bb9a520-2901-4d60-9cce-a8dd31b8a005)
+![Image](https://github.com/user-attachments/assets/5bb9a520-2901-4d60-9cce-a8dd31b8a005) 
+
+- ls –asl 
+```
+$ ls -asl
+``` 
+```
+합계 12
+4 drwxr-xr-x 2 chang chang 4906 4월 16일 13:37 .
+4 drwx------ 3 chang chang 4096 4월 16일 13:37 ..
+4 -rw-r--r-- 1 chang chang 2088 4월 16일 13:37 cs1.txt 
+``` 
+- ls –F 
+  - 기호로 파일의 종류를 표시 
+  *: 실행파일, /: 디렉터리, @:심볼릭 링크
