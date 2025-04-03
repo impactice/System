@@ -295,3 +295,20 @@ $ ls -s
 합계 4
 4 cs1.txt
 ```
+
+- ls -a 
+  - -a(all) 옵션 
+  - 숨겨진 파일들을 포함하여 모든 파일과 디렉터리를 리스트 
+  - “.”은 현재 디렉터리, “..”은 부모 디렉터리 
+```
+$ ls -a
+```
+``` 
+. .. cs1.txt
+``` 
+
+- ls -l(long) 
+  - 파일 속성(file attribute) 출력 
+  - 블록 수, 파일 종류, 접근권한, 링크 수, 소유자명, 크기, 수정 시간, 파일 이름 등 
+
+![Image](https://github.com/user-attachments/assets/5bb9a520-2901-4d60-9cce-a8dd31b8a005)
