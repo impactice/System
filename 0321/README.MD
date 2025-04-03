@@ -325,4 +325,35 @@ $ ls -asl
 ``` 
 - ls –F 
   - 기호로 파일의 종류를 표시 
-  *: 실행파일, /: 디렉터리, @:심볼릭 링크
+<span style="color:red">*: 실행파일, /: 디렉터리, @:심볼릭 링크</span> 
+
+- 예 
+```
+$ ls –F /
+```
+```
+bin@ dev/ home/ lib64@ mnt/ proc/ run/ srv/ tmp/ var/
+boot/ etc/ lib@ media/ opt/ root/ sbin@ sys/ usr/
+```
+- ls –R 
+  - -R(Recursive) 옵션 
+  - 모든 하위 디렉터리 내용을 리스트 한다 
+
+- 예 
+``` 
+$ ls –R
+``` 
+```
+$ ls –R /
+``` 
+
+## 파일 내용 출력 
+
+### 간단한 파일 만들기: gedit 
+- GNOME이 제공하는 GUI 기반 문서편집기 
+- 사용방법 
+  - [프로그램] -> [보조 프로그램] -> [텍스트 편집기] 
+``` 입력
+$ gedit [파일이름] &
+```
+
