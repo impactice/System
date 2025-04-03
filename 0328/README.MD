@@ -396,4 +396,60 @@ $ ls -l cs1.txt -rw-r--r--. 1 chang chang 905 7월 13 19:06 cs1.txt
 - 보통 시스템관리자가 계정을 만들 때 로그인 쉘 지정 
 ![Image](https://github.com/user-attachments/assets/4e3c3e26-ec67-4dd2-a739-b80ddfb28f5c) 
 
+### 로그인 쉘 변경 
+- 쉘 변경 
+```
+$ csh 
+``` 
+```
+%
+...
+% exit
+$
+``` 
 
+- 로그인 쉘 변경  
+```
+$ chsh 
+``` 
+```
+암호:
+chang의 로그인 쉘을 변경하고 있습니다
+새로운 값을 넣거나, 기본값을 원하시면 엔터를 치세요
+로그인 쉘 [/bin/bash]: /bin/csh
+$ logout
+login : chang
+passwd:
+% 
+``` 
+
+## 쉘의 기능 
+
+### 쉘의 주요 기능 
+- 명령어 처리 
+  - 사용자가 입력한 명령을 해석하고 적절한 프로그램을 실행 
+
+- 시작 파일 
+  - 로그인할 때 실행되어 사용자별로 맞춤형 사용 환경 설정  
+
+- 스크립트 
+  - 쉘 자체 내의 프로그래밍 기능
+
+![Image](https://github.com/user-attachments/assets/0c603cd2-7551-402a-b1de-a4c35fd56627) 
+
+### 쉘의 실행 절차 
+![Image](https://github.com/user-attachments/assets/bcfcf9fa-a84b-4c96-acc3-cea4f23b7d11) 
+
+### 쉘의 환경 변수 
+- 환경변수 설정법 
+```
+$ 환경변수명=문자열
+``` 
+환경변수의 값을 문자열로 설정한다 
+
+- 예 
+```
+$ TERM=xterm
+$ echo $TERM
+xterm
+```
