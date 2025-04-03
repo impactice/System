@@ -246,9 +246,51 @@ $ mkdir –p ~/dest/dir1
 ``` 
 
 ### 디렉터리 삭제 : rmdir(remove directory) 
-- 사용법 
+- 사용법(주의: 빈 디렉토리만 삭제할 수 있다) 
 ``` 
 $ rmdir 디렉터리+
 ``` 
 디렉터리(들)을 삭제한다. 
-* 주의: 빈 디렉토리만 삭제할 수 있다.
+ 
+- 예 
+```
+$ rmdir test
+rmdir: failed to remove ‘test’: 디렉터리가 비어있지 않음 
+``` 
+
+## 디렉터리 리스트 
+
+### 디렉터리 리스트: ls(list) 
+- 사용법 
+```
+$ ls(혹은 dir) [-aslFR] 디렉터리* 파일* 
+``` 
+지정된 디렉터리의 내용을 리스트 한다. 디렉터리를 지정하지 않으면 현재 디렉터리
+내용을 리스트 한다. 또한 파일을 지정하면 해당 파일만을 리스트 한다. 
+
+- 예 
+```
+$ ls /
+bin dev home lib64 mnt proc run srv tmp var
+boot etc lib media opt root sbin sys usr
+$ ls ~
+test 공개 다운로드 문서 바탕화면 비디오 사진 음악 템플릿
+$ cd test
+$ ls
+cs1.txt 
+``` 
+
+### ls 명령어 옵션 
+- 주요 옵션 
+![Image](https://github.com/user-attachments/assets/64f91472-859c-4b3a-bcb7-57b6c2552da1) 
+
+- ls -s 
+  - -s(size) 옵션 
+  - 디렉터리 내에 있는 모든 파일의 크기를 K 바이트 단위로 출력 
+``` 
+$ ls -s 
+``` 
+```
+합계 4
+4 cs1.txt
+```
