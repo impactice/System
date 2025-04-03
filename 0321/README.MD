@@ -16,7 +16,8 @@
    ```
    $ hostname 
    ```
-   linux.sookmyung.ac.kr
+   linux.sookmyung.ac.kr 
+   ```
 
 2. **운영 체제 이름 확인**
  - `uname` 명령어로 운영 체제의 이름을 확인할 수 있습니다.
