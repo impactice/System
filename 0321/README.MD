@@ -402,3 +402,129 @@ $ ls –asl cs1.txt
 $ 명령어 파일
 $ 명령어 파일*
 ```
+
+### 파일 내용 보기: cat 
+- 사용법 
+```
+$ cat [-n] 파일* 
+```
+파일(들)의 내용을 그대로 화면에 출력한다. 파일을 지정하지 않으면 표준입력 내용을 그대로 화면에 출력한다 
+
+- 예 
+```
+$ cat cs1.txt 
+``` 
+```
+Unix is a multitasking, multi-user computer operating system originally
+developed in 1969 by a group of AT&T employees at Bell Labs, including
+Ken Thompson, Dennis Ritchie, Brian Kernighan, Douglas McIlroy,
+and Joe Ossanna.
+...
+``` 
+
+- 예 
+```
+$ cat –n cs1.txt 
+``` 
+```
+1 Unix is a multitasking, multi-user computer operating system originally
+2 developed in 1969 by a group of AT&T employees at Bell Labs, including
+3 Ken Thompson, Dennis Ritchie, Brian Kernighan, Douglas McIlroy,
+4 and Joe Ossanna.
+...
+``` 
+```
+$ cat // 지정 파일 없음
+Hello World !
+Hello World !
+Bye!
+Bye!
+^D 
+``` 
+
+### 페이지 단위로 파일 내용 보기: more 
+- 사용법 
+```
+$ more 파일+ 
+``` 
+파일(들)의 내용을 페이지 단위로 화면에 출력한다 
+
+- 예 
+``` 
+$ more cs1.txt
+``` 
+``` 
+Unix is a multitasking, multi-user computer operating system originally
+developed in 1969 by a group of AT&T employees at Bell Labs, including
+Ken Thompson, Dennis Ritchie, Brian Kernighan, Douglas McIlroy,
+and Joe Ossanna.
+...
+During the late 1970s and early 1980s, the influence of Unix in academic
+circles led to large-scale adoption of Unix(particularly of the BSD variant,
+--계속--(59%) 
+```  
+
+### 파일 앞부분보기: head 
+- 사용법 
+```
+$ head [–n] 파일* 
+```
+파일(들)의 앞부분을 화면에 출력한다. 파일을 지정하지 않으면 표준입력 내용을 대상으로 한다 
+
+- 예 
+```
+$ head -5 cs1.txt 
+``` 
+```
+Unix is a multitasking, multi-user computer operating system originally
+developed in 1969 by a group of AT&T employees at Bell Labs, including
+Ken Thompson, Dennis Ritchie, Brian Kernighan, Douglas McIlroy,
+and Joe Ossanna. 
+``` 
+
+### 파일 뒷부분보기: tail 
+- 사용법 
+```
+$ tail [-n] 파일* 
+```
+파일(들)의 뒷부분을 화면에 출력한다. 파일을 지정하지 않으면 표준입력 내용을 대상으로 한다. 
+
+- 예 
+```
+$ tail cs1.txt 
+``` 
+```
+Linux, which is used to power data centers, desktops, mobile phones,
+and embedded devices such as routers, set-top boxes or e-book readers.
+Today, in addition to certified Unix systems such as those already
+mentioned, Unix-like operating systems such as MINIX, Linux, Android,
+and BSD descendants (FreeBSD, NetBSD, OpenBSD, and DragonFly BSD) are
+commonly encountered.
+The term traditional Unix may be used to describe a Unix or
+an operating system that has the characteristi cs of either Version 7
+Unix or UNIX System V. 
+``` 
+
+### 단어 세기: wc(word count) 
+- 사용법 
+``` 
+$ wc [-lwc] 파일* 
+```  
+파일에 저장된 줄(l), 단어(w), 문자(c)의 개수를 세서 출력한다.
+파일을 지정하지 않으면 표준입력 내용을 대상으로 한다. 
+
+- 예 
+```
+$ wc cs1.txt
+38 318 2088 cs1.txt
+$ wc -l cs1.txt
+38 cs1.txt
+$ wc -w cs1.txt
+318 cs1.txt
+$ wc -c cs1.txt
+2088 cs1.txt 
+``` 
+
+## 핵심 개념
+- 리눅스의 디렉터리는 루트로부터 시작하여 계층구조를 이룬다. 
+- 절대 경로명은 루트 디렉터리부터 시작하고 상대 경로명은 현재 디렉터리부터 시작한다.
