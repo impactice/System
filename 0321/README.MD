@@ -23,18 +23,20 @@
 
    예시:
    ```
-   $ uname
-   Linux
+   $ uname 
    ```
+   Linux
+   
 
 3. **시스템 정보 전체 확인**
  - `uname -a` 명령어를 사용하면 시스템의 커널 버전, 아키텍처 등 자세한 정보를 확인할 수 있습니다.
 
    예시:
    ```
-   $ uname -a
-   Linux Ubuntu 5.11.0-31-generic #33-Ubuntu SMP Wed Aug 11 13:19:04 UTC 2021 x86_64 x86_64 x86_64 GNU/Linux
+   $ uname -a 
    ```
+   Linux Ubuntu 5.11.0-31-generic #33-Ubuntu SMP Wed Aug 11 13:19:04 UTC 2021 x86_64 x86_64 x86_64 GNU/Linux
+   
 
 ### 사용자 정보 확인
 1. **현재 사용자 확인**
