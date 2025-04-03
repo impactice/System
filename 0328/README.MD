@@ -226,3 +226,37 @@ $ ls -sl cs1.txt
 ``` 
 ![Image](https://github.com/user-attachments/assets/13f12339-6dc1-4f25-88fb-1b9f23cbcac6) 
 
+### 파일 종류 
+- 리눅스에서 지원하는 파일 종류 
+![Image](https://github.com/user-attachments/assets/b84189b8-7831-4811-a369-699c1f42ba1f) 
+
+- 사용법 
+```
+$ file 파일 
+```
+파일의 종류에 대한 자세한 정보를 출력한다 
+
+- 예 
+```
+$ file cs1.txt
+cs1.txt: ASCII text
+$ file a.out
+a.out: ELF 64-bit LSB executable, ... 
+``` 
+
+## 접근권한 
+### 접근권한(permission mode) 
+- 파일에 대한 읽기(r), 쓰기(w), 실행(x) 권한 
+![Image](https://github.com/user-attachments/assets/392f2347-49fe-4482-81c3-2430114b293e) 
+
+- 소유자(owner)/그룹(group)/기타(others)로 구분하여 관리 
+- 예: rwx r-x r-x  
+![Image](https://github.com/user-attachments/assets/0e0b81f5-ba06-4020-98b7-7360df2d0a07)
+
+- X 윈도우의 GNOME 데스크톱에서 속성 확인 
+```
+$ ls -sl cs1.txt
+4 –rw-rw-r-- 1 chang chang 2088 10월 23일 13:37 cs1.txt 
+``` 
+![Image](https://github.com/user-attachments/assets/0a7096d6-dfd0-46dd-82be-742880628a03) 
+
