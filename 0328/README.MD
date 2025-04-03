@@ -370,4 +370,30 @@ $ ls -l cs1.txt -rw-r--r--. 1 chang chang 905 7월 13 19:06 cs1.txt
   - 사용자로부터 명령어를 입력받아 이를 처리한다 
 ![Image](https://github.com/user-attachments/assets/afb665bb-abc3-47c2-9b76-6242a58c24f2) 
 
+- 유닉스/리눅스에서 사용 가능한 쉘의 종류 
+![Image](https://github.com/user-attachments/assets/a6f482d8-472e-4813-9cca-8b07d10080dd) 
+
+- 본 쉘(Bourne shell) 
+  - 벨연구소의 스티븐 본(Stephen Bourne)에 의해 개발됨 
+  - 유닉스에서 기본 쉘로 사용됨 
+
+- 콘 쉘(Korn shell) 
+  - 1980년대에는 역시 벨연구소에서 본 쉘을 확장해서 만듬 
+
+- Bash(Bourne again shell) 
+  - GNU에서 본 쉘을 확장하여 개발한 쉘 
+  - 리눅스 및 맥 OS X에서 기본 쉘로 사용되면서 널리 보급됨 
+  - Bash 명령어의 구문은 본 쉘 명령어 구문을 확장함 
+
+- C 쉘(C shell) 
+  - 버클리대학의 빌 조이(Bill Joy)
+  - 쉘의 핵심 기능 위에 C 언어의 특징을 많이 포함함 
+  - BSD 계열의 유닉스에서 많이 사용됨
+  - 최근에 이를 개선한 tcsh이 개발됨어 되어 사용됨
+
+### 로그인 쉘(login shell) 
+- 로그인 하면 자동으로 실행되는 쉘 
+- 보통 시스템관리자가 계정을 만들 때 로그인 쉘 지정 
+![Image](https://github.com/user-attachments/assets/4e3c3e26-ec67-4dd2-a739-b80ddfb28f5c) 
+
 
