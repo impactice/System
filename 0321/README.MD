@@ -196,3 +196,59 @@ $ cd ~
 $ pwd
 /home/chang 
 ``` 
+
+### 디렉터리 이동: cd(change directory) 
+- 사용법 
+```
+$ cd [디렉터리]
+``` 
+현재 작업 디렉터리를 지정된 디렉터리로 이동한다.
+디렉터리를 지정하지 않으면 홈 디렉터리로 이동한다.
+
+- 예 
+```
+$ cd
+$ cd ~
+$ cd 바탕화면
+$ pwd
+/home/chang/바탕화면
+$ cd .. // 부모 디렉터리로 이동 
+``` 
+
+### 디렉터리 생성: mkdir(make directory) 
+
+- 사용법 
+```
+$ mkdir [-p] 디렉터리+
+```
+디렉터리(들)을 새로 만든다. 
+
+- 예 
+```
+$ cd ~ // 홈 디렉터리로 이동
+$ mkdir test
+$ mkdir test temp
+$ ls -l
+drwxrwxr-x. 2 chang chang 6 5월 12 10:12 temp
+drwxrwxr-x. 2 chang chang 6 5월 12 10:12 test 
+``` 
+
+### 디렉터리 생성: mkdir 
+- 중간 디렉터리 자동 생성 옵션 -p
+  - 필요한 경우에 중간 디렉터리를 자동으로 만들어 준다. 
+
+- 예 : ~/dest 디렉터리가 없는 경우 
+``` 
+$ mkdir ~/dest/dir1
+mkdir: '/home/chang/dest/dir1' 디렉터리를 만들 수 없습
+니다: 그런 파일이나 디렉터리가 없습니다
+$ mkdir –p ~/dest/dir1 
+``` 
+
+### 디렉터리 삭제 : rmdir(remove directory) 
+- 사용법 
+``` 
+$ rmdir 디렉터리+
+``` 
+디렉터리(들)을 삭제한다. 
+* 주의: 빈 디렉토리만 삭제할 수 있다.
