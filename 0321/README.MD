@@ -16,6 +16,7 @@
    ```
    $ hostname 
    ```
+   ```
    linux.sookmyung.ac.kr 
    ```
 
