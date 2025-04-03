@@ -453,3 +453,83 @@ $ TERM=xterm
 $ echo $TERM
 xterm
 ```
+
+### 쉘의 환경 변수 
+- 환경변수 보기  
+```
+$ env 
+``` 
+```
+TERM=xterm
+SHELL=/bin/bash
+USER=chang
+HOME=/home/chang
+PATH=/usr/local/bin:/usr/bin: ...
+...
+``` 
+
+- 사용자 정의 환경 변수 
+``` 
+$ MESSAGE=hello
+``` 
+``` 
+$ export MESSAGE
+``` 
+
+### 쉘의 시작 파일(start-up file)
+- 시작 파일 
+  - 쉘마다 시작될 때 자동으로 실행되는 고유의 시작 파일
+  - 주로 사용자 환경을 설정하는 역할을 하며 환경설정을 위해서 환경변수에 적절한 값을 설정 
+
+- 시스템 시작 파일 
+  - 시스템의 모든 사용자에게 적용되는 공통적인 설정 
+  - 환경변수 설정, 명령어 경로 설정, 환영 메시지 출력, ... 
+
+- 사용자 시작 파일 
+  - 사용자 홈 디렉터리에 있으며 각 사용자에게 적용되는 설정 
+  - 환경변수 설정, 프롬프트 설정, 명령어 경로 설정, 명령어 이명 설정, ... 
+
+### 시작 파일(start-up file) 
+![Image](https://github.com/user-attachments/assets/50ab6f0b-8c45-4718-bb1c-1ebf03d86a8a) 
+
+### 시작 파일 예 
+```
+.bash_profile 
+``` 
+```
+PATH=$PATH:/usr/local/bin:/etc:.
+TERM=xterm
+export PATH TERM
+stty erase ^
+echo $USER, Welcome to Linux ! 
+``` 
+
+- 시작 파일 바로 적용 
+```
+$ . .bash_profile
+```
+
+## 전면 처리와 후면 처리 
+
+### 전면 처리 vs 후면처리 
+- 전면 처리 
+  - 입력된 명령어를 전면에서 실행하고 쉘은 명령어 실행이 끝날 때까지 기다린다 
+  - $ 명령어
+
+- 후면 처리 
+  - 명령어를 후면에서 실행하고 전면에서는 다른 작업을 실행하여 동시에 여러 작업을 수행할 수 있다 
+  - $ 명령어 & 
+
+### 후면 처리 예 
+```
+$ (sleep 100; echo done) & 
+``` 
+```
+[1] 8320 
+``` 
+``` 
+$ find . -name test.c -print & 
+``` 
+```
+[2] 8325 
+```
