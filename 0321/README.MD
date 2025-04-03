@@ -163,5 +163,14 @@ ls (1p) - list directory contents
 ``` 
 $ which 명령어
 ``` 
-  - 명령어의 절대경로를 보여준다. 
+명령어의 절대경로를 보여준다. 
 
+- 예 
+``` 
+$ which ls
+/bin/ls
+$ which pwd
+/bin/pwd
+$ which passwd
+/bin/passwd 
+``` 
