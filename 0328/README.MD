@@ -184,4 +184,45 @@ $ ln [-s] 파일1 디렉터리
 
 ![Image](https://github.com/user-attachments/assets/cefb0513-6bc9-40bd-b4ea-bec1c1bd4820) 
 
+### 하드 링크(hard link) 
+- 하드 링크 
+  - 기존 파일에 대한 새로운 이름이라고 생각할 수 있다 
+  - 실제로 기존 파일을 대표하는 i-노드를 가리켜 구현한다 
+
+- 예 
+$ ln hello.txt hi.txt
+$ ls -l
+-rw------- 2 chang chang 15 11월 7 15:31 hello.txt
+-rw------- 2 chang chang 15 11월 7 15:31 hi.txt 
+
+- 질문 
+  - 이 중에 한 파일의 내용을 수정하면 어떻게 될까? 
+  - 이 둘 중에 한 파일을 삭제하면 어떻게 될까? 
+
+### 심볼릭 링크(symbolic link) 
+- 심볼릭 링크 
+  - 다른 파일을 가리키고 있는 별도의 파일이다 
+  - 실제 파일의 경로명을 저장하고 있는 일종의 특수 파일이다 
+  - 이 경로명이 다른 파일에 대한 간접적인 포인터 역할을 한다 
+
+- 예 
+```
+$ ln -s hello.txt hi.txt
+$ ls -l
+-rw------- 1 chang chang 15 11월 7 15:31 hello.txt
+lrwxrwxrwx 1 chang chang 9 1월 24 12:56 hi.txt -> hello.txt
+$ ln –s /usr/bin/gcc cc
+$ ls –l cc
+lrwxrwxrwx. 1 chang chang 12 7월 21 20:09 cc -> /usr/bin/gcc 
+``` 
+
+## 파일 속성 
+
+### 파일 속성(file attribute) 
+- 블록 수, 파일 종류, 접근권한, 링크 수, 소유자 및 그룹, 수정 시간 
+```
+$ ls -sl cs1.txt
+4 –rw-rw-r-- 1 chang chang 2088 10월 23 13:37 cs1.txt 
+``` 
+![Image](https://github.com/user-attachments/assets/13f12339-6dc1-4f25-88fb-1b9f23cbcac6) 
 
