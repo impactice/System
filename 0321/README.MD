@@ -142,4 +142,17 @@ ls (1p) - list directory contents
 
 ## 디렉터리 계층 구조 
 - 리눅스의 디렉터리는 루트로부터 시작하여 트리 형태의 계층 구조를 이룬다. 
-![Image](https://github.com/user-attachments/assets/05d15e15-c963-4dbd-a507-f0016bf52195)
+![Image](https://github.com/user-attachments/assets/05d15e15-c963-4dbd-a507-f0016bf52195) 
+
+## 홈 디렉터리 
+- 홈 디렉터리(home directory) 
+  - 각 사용자마다 별도의 홈 디렉터리가 있음 
+  - 사용자가 로그인하면 홈 디렉터리에서 작업을 시작함
+![Image](https://github.com/user-attachments/assets/4e364964-bc20-49d0-8e12-3e8e4137554d) 
+
+## 경로명 
+- 파일이나 디렉터리에 대한 정확한 이름 
+- 절대 경로명(absolute pathname) 
+  - 루트 디렉터리로부터 시작하여 경로 이름을 정확하게 적는 것 
+- 상대 경로명(relative path name)
+  - 현재 작업 디렉터리부터 시작해서 경로 이름을 적는 것
