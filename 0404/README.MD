@@ -25,3 +25,51 @@
 기술 측면 
 1. 인간의 고유 영역에 도전하는 기술의 혁신 - 단순 데이터 인식을 넘어 '창조'의 영역에 진입한 생성형 AI 기술 
 2. 가속화된 생성형 AI 기술의 진보 속도 - GPT3에서 3.5까지 2년, 3.5에서 4까지 4개월로 가속화된 업그레이드 GPT AI 모델 출시 주기
+
+```
+#include <stdio.h>
+
+int main() {
+    int num;
+    int binary[8];
+    int i, count = 0;
+    
+    // 0부터 255 사이의 숫자 입력 받기
+    printf("0부터 255 사이의 숫자를 입력하세요: ");
+    scanf("%d", &num);
+    
+    // 입력 범위 확인
+    if (num < 0 || num > 255) {
+        printf("입력 오류: 숫자는 0부터 255 사이여야 합니다.\n");
+        return 1;
+    }
+    
+    // 2진수로 변환하여 배열에 저장 (8비트)
+    for (i = 7; i >= 0; i--) {
+        binary[i] = num % 2;
+        num /= 2;
+    }
+    
+    // 전체 8비트 이진수 출력
+    printf("8비트 이진수: ");
+    for (i = 0; i < 8; i++) {
+        printf("%d", binary[i]);
+        if (binary[i] == 1) {
+            count++;  // 1의 개수 세기
+        }
+    }
+    printf("\n");
+    
+    // 1의 개수 출력
+    printf("1의 개수: %d\n", count);
+    
+    // 상위 4비트 출력
+    printf("상위 4비트: ");
+    for (i = 0; i < 4; i++) {
+        printf("%d", binary[i]);
+    }
+    printf("\n");
+    
+    return 0;
+} 
+```
