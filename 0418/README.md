@@ -1873,6 +1873,183 @@ $ awk ‘NR > 1 && NR < 4 { print NR, $1, $3, $NF }’ you.txt
   - /패턴1/, /패턴2/
     패턴1을 포함한 줄부터 패턴2를 포함한 줄까지
 
+## 액션(action) 
+- 액션에서 사용 가능한 문장
+  - if (조건) 실행문 [else 실행문]
+  - while (조건) 실행문
+  - for (식; 조건; 식) 실행문
+  - break
+  - continue
+  - 변수 = 식
+  - print [식들의 리스트]
+  - printf 포맷 [, 식들의 리스트]
+  - next
+    현재 줄에 대한 나머지 패턴 건너뛰기
+  - exit
+    현재 줄의 나머지 부분 건너뛰기
+  - { 실행문 리스트 }
+
+## 연산자 
+- 액션에서 사용 가능한 연산자(C 언어 연산자)
+  - 산술 연산자: +, -, *, /, %, ++, --
+  - 대입 연산자: =,+=, -=, *=, /=, %=
+  - 조건 연산자: ? :
+  - 논리 연산자: ||, &&, !
+  - 패턴 비교 연산자: ~, !~
+  - 비교 연산자: <, <=, >, >=, !=, ==
+  - 필드참조 연산자: $
+
+- 간단한 AWK 프로그램 예
+- $ awk 'END { print NR }' 파일명
+- $ awk 'NR % 2 == 0 { print NR, $0 }' 파일명
+- $ awk 'NF > 5{ print NR, $0}' 파일명
+- $ awk '/raise/ { print NR, $0 }' 파일명
+- $ awk '/the?/ { print NR, $0 }' 파일명
+- $ awk '/a..e/ { print NR, $0 }' 파일명
+- $ awk '/a.*e/ { print NR, $0 }' 파일명
+- $ ls -l | awk '{x += $5}; END {print x}'
+
+# AWK 프로그램 작성 
+## AWK 프로그램 예 
+- [예제 1]
+```
+BEGIN { print "파일 시작:", FILENAME }
+{ print $1, $NF }
+END { print "파일 끝" }
+```
+- [예제 2] 줄 수/단어 수 계산
+```
+BEGIN { print "파일 시작" }
+{
+printf "line %d: %d \n", NR, NF;
+word += NF
+}
+END { printf "줄 수 = %d, 단어 수 = %d\n", NR, word }
+```
+- [예제 3]
+```
+{
+for (I = 1; I <= NF; I += 2)
+printf "%s ", $I
+printf " \n"
+}
+```
+- [예제 4]
+```
+/st.*e/ {print NR, $0 }
+```
+- [예제 5]
+```
+/strong/, /heart/ { print NR, $0 }
+```
+
+- [예제 6]
+```
+/raise/ { ++line }
+END { print line }
+```
+- [예제 7] 단어별 출현 빈도수 계산
+```
+BEGIN {
+FS="[^a-zA-Z]+"
+}
+{
+for (i=1; i<=NF; i++)
+words[tolower($i)]++ 
+}
+END {
+for (i in words)
+print i, words[i]
+}
+```
+  - 단어를 인덱스로 사용하는 연관 배열 사용
+
+- [예제 8] wc 구현
+```
+BEGIN { print "파일 시작" }
+{
+printf "line %d: %d %d\n", NR, NF, length($0);
+word += NF;
+char += length($0)
+}
+END { printf "줄 수 = %d, 단어 수 = %d, 문자 수 = %d\n", NR,
+word, char }
+```
+
+## awk 내장 함수 
+- 문자열 함수
+  - index(s1, s2), length([s]), match(s, r), sub(r, s), tolower(s), toupper(s), …
+- 입출력 함수
+  - getline, next, print, printf, system …
+- 수학 함수
+  - atan2(x,y), cos(x), sin(x), exp(arg), log(arg)
+  - sqrt(arg), int(arg), rand(), srand(expr)
+
+# 핵심 개념 
+- cron은 유닉스의 명령어 스케줄링 시스템으로 crontab 파일에 명시된 대로 주기적으로 명령을 수행한다
+- 유닉스에서는 tar 명령어를 사용하여 여러 파일을 하나로 묶은 후에 compress 혹은 gzip 명령어를 이용하여 압축한다
+- awk 프로그램은 조건과 액션을 기술하는 명령어들로 구성되며 텍스트 파일의 줄들을 스캔하여 조건을 만족하는 각 줄에 대해 액션을 수행한다
+
+# Bash 쉘 소개 
+
+## Bash(Borune-again shell)
+- 리눅스, 맥 OS X 등의 운영 체제의 기본 쉘
+- Bash 문법은 본 쉘의 문법을 대부분 수용하면서 확장
+- 시작 파일(start-up file)
+  - /etc/profile
+    - 전체 사용자에게 적용되는 환경 설정, 시작 프로그램 지정
+  - /etc/bash.bashrc
+    - 전체 사용자에게 적용되는 별명과 함수들을 정의
+  - ~/.bash_profile
+    - 각 사용자를 위한 환경을 설정, 시작 프로그램 지정
+  - ~/.bashrc
+    - 각 사용자를 위한 별명과 함수들을 정의 
+
+## Bash 시작 과정
+![image](https://github.com/user-attachments/assets/9dea07e2-ed69-4154-b34d-8cb1ef6bb23d)
+
+## 시작 파일 예: .bash_profile
+```
+# .bash_profile
+```
+```
+# 사용자의 환경변수 설정 및 시작 프로그램
+```
+```
+if [ -f ~/.bashrc ]
+then
+. ~/.bashrc
+fi
+```
+```
+PATH=$PATH:$HOME/bin:.
+BASH_ENV=$HOME/.bashrc
+USERNAME=“chang"
+export USERNAME BASH_ENV PATH 
+```
+
+## 시작 파일 예: .bashrc
+1 # .bashrc
+2 # 사용자 시작 파일
+3 # 히스토리 길이 설정
+4 HISTSIZE=1000
+5 HISTFILESIZE=2000
+6
+7 # 사용자의 별명 설정
+8 alias rm='rm-i’
+9 alias cp='cp -i'
+10 alias mv='mv-i'
+11 alias ls=’ls --color=auto’
+12 alias grep=’grep —color=auto’
+13 alias ll='ls -al --color=yes' 
+
+
+
+
+
+
+
+
 
 
 
