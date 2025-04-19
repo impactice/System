@@ -1385,6 +1385,216 @@ $ diff you.txt me.txt
 > I am strong, when I am on your shoulders
 ```
 
+## diff 출력: 편집 명령어
+- 삭제(d)
+  - 첫 번째 파일의 n1부터 n2까지의 줄들을 삭제하면 두 번째 파일의 줄 n3 이후와 서로 같다 
+
+n1,n2 d n3
+< 삭제할 첫 번째 파일의 줄들 
+
+- 예 
+```
+$ diff me.txt you.txt
+```
+```
+10,13d9
+<
+< You raise me up, so I can stand on mountains
+< You raise me up, to walk on stormy seas
+< I am strong, when I am on your shoulders
+```
+
+## diff 출력: 편집 명령어 
+- 변경(c)
+  - 첫 번째 파일의 n1부터 n2까지의 줄들을 두 번째 파일의 n3부터 n4까지의 줄들로 대치하면 두 파일은 서로 같다.
+n1,n2 c n3,n4
+< 첫 번째 파일의 대치될 줄들
+--
+> 두 번째 파일의 대치할 줄들
+
+- 예
+```
+$ diff 파일1 파일2
+```
+```
+1 c 1
+< This is the first file
+--
+> This is the second file
+```
+
+# 기타 파일 조작  
+
+## 파일 분할 : split 
+- 사용법 
+```
+$ split [-l n] 입력파일 [출력파일]
+```
+```
+하나의 입력파일을 일정한 크기의 여러 개 작은 파일들로 분할한다. -l n 옵션을 이용하여 분할할 줄 수를 지정할 수 있다
+```
+- 1000줄씩 분할하여 xaa, xab, ... 형태의 파일명으로 저장
+
+- 예
+```
+$ split -l 10 you.txt
+```
+```
+$ ls -l
+```
+```
+-rw-r--r-- 1 chang faculty 341 2월 16일 14:36 xaa
+-rw-r--r-- 1 chang faculty 177 2월 16일 14:36 xab
+-rw-r--r-- 1 chang faculty 518 2월 15일 19:33 you.txt
+```
+
+## 파일 합병: cat 
+- cat 명령어를 이용한 파일 합병
+```
+$ cat 파일1 파일2 > 파일3
+```
+```
+파일1과 파일2의 내용을 붙여서 새로운 파일3을 만들어 준다
+```
+
+- 예
+```
+$ cat xaa xab > xmerge
+```
+
+## 파일 합병: paste
+- paste 명령어를 이용한 줄 단위 파일 합병 
+```
+$ paste [ -s ][ -d구분문자 ] 파일*
+```
+```
+여러 파일들을 줄 단위로 합병하여 하나의 파일을 만들어 준다.
+-s : 한 파일 끝에 다른 파일 내용을 덧붙인다
+```
+
+- 예
+```
+$ paste -s xaa xab > xmerge
+```
+
+## 파일 합병: paste 예 
+```
+line.txt
+```
+```
+line 1:
+line 2:
+...
+line 13:
+line 14:
+```
+```
+$ paste line.txt you.txt
+```
+```
+line 1: When I am down and, oh my soul, so weary
+line 2: When troubles come and my heart burdened be
+...
+line 13: But when you come and I am filled with wonder,
+line 14: Sometimes, I think I glimpse eternity
+```
+```
+$ paste line.txt you.txt > lineyou.txt
+```
+
+# 핵심 개념 
+- find 명령어는 파일 이름이나 속성을 이용하여 해당하는 파일을 찾는 데 사용된다
+- grep 명령어는 파일들을 대상으로 지정된 패턴의 문자열을 검색하고, 해당 문자열을 포함하는 줄들을 출력한다
+- sort 명령어는 텍스트 파일을 줄 단위로 정렬한다
+- cmp 명령어는 두 파일이 같은지 비교한다
+- diff 명령어는 두 파일이 서로 다른지 비교한다
+
+# 명령어 스케줄링 
+## 주기적 실행 cron 
+- cron 시스템
+  - 유닉스의 명령어 스케줄링 시스템으로 crontab 파일에 명시된 대로 주기적으로 명령을 수행한
+
+- crontab 파일 등록법
+```
+$ crontab 파일
+```
+```
+crontab 파일을 cron 시스템에 등록한다
+```
+
+- crontab 파일
+  - 7개의 필드로 구성
+  - 분 시 일 월 요일 [사용자] 명령
+
+
+## 주기적 실행 cron 
+- crontab 명령어
+```
+$ crontab -l [사용자]
+```
+```
+사용자의 등록된 crontab 파일 리스트를 보여준다
+```
+```
+$ crontab -e [사용자]
+```
+```
+사용자의 등록된 crontab 파일을 수정 혹은 생성한다
+```
+```
+$ crontab -r [사용자]
+```
+```
+사용자의 등록된 crontab 파일을 삭제한다
+```
+
+## crontab 파일 예 
+- chang.cron
+![image](https://github.com/user-attachments/assets/38ad72c1-592e-417c-8a2f-325c7e82caab)
+
+- 사용 예
+```
+$ crontab chang.cron
+```
+```
+$ crontab -l
+```
+```
+30 18 * * * rm /home/chang/tmp/*
+```
+```
+$ crontab -r
+```
+```
+$ crontab -l
+```
+```
+no crontab for chang
+```
+- crontab 파일 예1
+  0 * * * * echo “뻐꾹” >> /tmp/x
+  매 시간 정각에 “뻐꾹” 메시지를 /tmp/x 파일에 덧붙인다.
+- crontab 파일 예2
+  20 1 * * * root find /tmp –atime +3 –exec rm –f {} \;
+  매일 새벽 1시 20분에 3일간 접근하지 않은 /tmp 내의 파일을 삭제
+- crontab 파일 예3
+  30 1 * 2,4,6,8,10,12 3-5 /usr/bin/wall /var/tmp/message
+  2개월마다 수요일부터 금요일까지 1시 30분에 wall 명령을 사용해서 시스템의 모든 사용자에게 메시지를 전송
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
