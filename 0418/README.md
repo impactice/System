@@ -2518,36 +2518,748 @@ $score1.bash
 B
 ```
 
+## 스위치 
+![image](https://github.com/user-attachments/assets/8018ebf0-4a24-4f24-ad55-401b224b2af9)
 
+![image](https://github.com/user-attachments/assets/e853b7ff-aeb1-4e20-86db-57798fdb9baf)
 
+# 반복문 
 
+## 반복문: for 
+- for 구문
+  - 리스트의 각 값에 대해서 명령어들을 반복  
 
+![image](https://github.com/user-attachments/assets/13840ba3-32b9-485e-902c-cdeb8ff5af77)
 
+![image](https://github.com/user-attachments/assets/a7fc24e0-ef08-4048-811d-add2538f9477)
 
+## 모든 명령줄 인수 처리 
+- 모든 명령줄 인수 처리 
+![image](https://github.com/user-attachments/assets/8111e200-58ed-439e-be12-be54718bb4f1)
 
+![image](https://github.com/user-attachments/assets/45ba7afe-a9af-45fa-a134-160c80e29f5a)
 
+## 반복문: while 
+- while 문
+  - 조건에 따라 명령어들을 반복적으로 실행  
 
+![image](https://github.com/user-attachments/assets/85b0bcb8-b696-4507-a737-c773ea4abc60)
 
+![image](https://github.com/user-attachments/assets/42dafc4a-b877-45d3-b4b6-ba391ec029fc)
 
+## menu.bash 
+![image](https://github.com/user-attachments/assets/c8b3a604-f90d-4c7b-ae84-12a202008eda)
 
+![image](https://github.com/user-attachments/assets/d78546d7-b1fa-425d-ac9b-631653dde18f)
 
+![image](https://github.com/user-attachments/assets/d344f103-0431-42c4-9980-730996bae14b)
 
+# 고급 기능 
 
+## 함수 
+- 함수 정의
+![image](https://github.com/user-attachments/assets/77bd4dba-f77b-4baa-a5b3-a672dd456773)
 
+- 함수 호출 
+![image](https://github.com/user-attachments/assets/b4f70484-16c1-473d-a078-5e866dfedd31)
 
+![image](https://github.com/user-attachments/assets/35a77a15-52db-440b-a38e-7302c4785475)
 
+## 함수 
+```
+$lshead.bash
+```
+```
+안녕하세요
+함수 시작, 매개변수 /tmp
+2022. 02. 23. (수) 17:43:27 KST
+디렉터리 /tmp 내의 처음 3개 파일만 리스트
+총 1184
+-rw------- 1 chang faculty 11264 2009년 3월 28일 Ex01378
+-rw------- 1 chang faculty 12288 2011년 5월 8일 Ex02004
+-rw------- 1 root other 8192 2011년 5월 4일 Ex02504
+```
 
+## 디버깅 
+```
+$ bash -vx 스크립트 [명령줄 인수]
+```
+```
+$ bash -v menu.bash
+```
+```
+#!/bin/bash
+echo 명령어 메뉴
+명령어 메뉴
+cat << MENU
+d : 날짜 시간
+l : 현재 디렉터리 내용
+w : 사용자 보기
+q : 끝냄
+MENU
+d : 날짜 시간
+l : 현재 디렉터리 내용
+w : 사용자 보기
+q : 끝냄
+stop=0
+while (($stop == 0))
+do
+echo -n '? '
+read reply
+case $reply in
+"d") date;;
+"l") ls;;
+"w") who;;
+"q") stop=1;;
+*) echo 잘못된 선택;;
+esac
+done
+? d
+2023년 … 17:43:27 KST
+? q
+```
 
+## shift 
+- shift 명령어
+  - shift [리스트변수]
+  - 명령줄 인수[리스트 변수] 내의 원소들을 하나씩 왼쪽으로 이동 
+```
+#!/bin/bash
+# 사용법: perm2.bash 파일*
+# 파일의 사용권한과 이름을 프린트
+if [ $# -eq 0 ]
+then
+echo 사용법: $0 files
+exit 1
+fi
+echo " 허가권 파일"
+while [ $# -gt 0 ]
+do
+file=$1
+if [ -f $file ]
+then
+fileinfo=`ls -l $file`
+perm=`echo "$fileinfo" |
+cut -d' ' -f1`
+echo "$perm $file"
+fi
+shift
+done
+```
 
+## 디렉토리 내의 모든 파일 처리 
+- 디렉터리 내의 모든 파일 처리
+  - 해당 디렉터리로 이동
+  - for 문과 대표 문자 *를 사용
+  - 대표 문자 *는 현재 디렉터리 내의 모든 파일 이름들로 대 
+```
+cd $dir
+for file in *
+do
+echo $file
+done
+```
 
+## 디렉터리 내의 모든 파일 처리: 예 
+```
+#!/bin/bash
+# 사용법: count2.bash [디렉터리]
+# 대상 디렉터리 내의 파일, 서브디렉터리, 기타 개수를 세서 프린트
+if [ $# -eq 0 ]
+then
+dir="."
+else
+dir=$1
+fi
+if [ ! -d $dir ]
+then
+echo $0\: $dir 디렉터리 아님
+exit 1
+fi
+let fcount=0
+let dcount=0
+let others=0
+echo $dir\:
+cd $dir
+for file in *
+do
+if [ -f $file ]
+then
+let fcount++
+elif [ -d $file ]
+then
+let dcount++
+else
+let others++
+fi
+done
+echo 파일: $fcount 디렉터리: $dcount 기타: $others
+```
 
+## 리커전(recursion)
+- 스크립트도 자기 자신을 호출 가능
+- 어떤 디렉터리의 모든 하위 디렉터리에 대해 동일한 작업을 수행할 때 매우 유용함 
+```
+#!/bin/bash
+# 사용법 lssr.bash [디렉터리]
+# 대상 디렉터리와 모든 하위 디렉터리 내에 있는 파일들의 크기를 리스트한다
+```
+```
+if [ $# -eq 0 ]
+then
+dir="."
+else
+dir=$1
+fi
+if [ ! -d $dir ]
+then
+echo $0\: $dir 디렉터리 아님
+exit 1
+fi
+cd $dir
+echo -e "\n $dir :"
+ls -s
+for x in *
+do
+if [ -d $x ]
+then
+/home/chang/bash/lssr.bash $x
+fi
+done
+```
 
+## 터미널에서 실행 
+- 터미널에서 while 혹은 for문도 실
+```
+$ for f in *
+```
+```
+> do
+> echo $f
+> done
+```
+```
+$ let i=2
+$ let j=1
+$ while (( $j <= 10 ))
+> do
+> echo '2 ^' $j = $i
+> let i*=2
+> let j++
+> done
+2 ^ 1 = 2
+2 ^ 2 = 4
+…
+2 ^ 10 = 1024
+```
 
+# 핵심 개념 
+- 단순 변수는 하나의 값(문자열)을 리스트 변수는 여러 개의 값(문자열)을 저장할 수 있다
+- 쉘 변수는 크게 환경변수와 지역변수 두 종류로 나눌 수 있다 환경 변수는 값이 자식 프로세스에게 상속되며 지역변수는 그렇지 않다
+- Bash 쉘은 조건, 스위치, 반복 등을 위한 제어구조로 if, case, for, while 등의 문장을 제공한다
+- Bash 쉘의 식은 비교 연산, 파일 관련 연산, 산술 연산 등을 할 수 있
 
+# 프로그램 작성과 컴파일 
+## gedit 문서편집기
+- GNU의 대표적인 GUI 텍스트 편집기
+- GNOME 환경의 기본 편집기
+  - 텍스트, 프로그램 코드, 마크업 언어 편집에 적합
+  - 깔끔하고 단순한 GUI
 
+- gedit 실행 방법
+  - 메인 메뉴
+    - [프로그램] -> [보조 프로그램] -> [지에디트] 선택
+  - 터미널
+    - $ gedit [파일이름] &
+- 파일 관리자:
+  - 텍스트 파일 클릭하면 자동실행
 
+![image](https://github.com/user-attachments/assets/d1f7d01e-6031-403d-a86a-5a32a71fa444)
 
+## gedit 메뉴
+- 파일
+  - 새로 만들기, 열기, 저장, 되돌리기, 인쇄
+- 편집
+  - 입력 취소, 다시 실행, 잘라내기, 복사, 붙여넣기, 삭제
+- 보기
+  - 도구모음, 상태표시줄, 전체화면, 강조 모드
+- 검색
+  - 찾기, 바꾸기, 줄로 이동
+- 도구
+  - 맞춤법 검사, 오타가 있는 단어 강조, 언어 설정, 문서 통계
+- 문서
+  - 모두 저장, 모두 닫기, 새 탭 그룹, 이전 문서
 
+## 단일 모듈 프로그램 
+- 프로그램 작성
+  - gedit 이용
+- [보기] 메뉴
+  - C 구문 강조 기능 설정
+- 프로그램 편집하는 화면
+  - #include 같은 전처리 지시자는 황색
+  - 주석은 파란색
+  - 자료형 이름은 초록색
+  - if나 while 같은 문장 키워드는 브라운 색
 
+![image](https://github.com/user-attachments/assets/9019ef79-852c-4d3b-915e-a1c3c5da40da)
 
+## gcc 컴파일러 
+- gcc(GNU cc) 컴파일러
+```
+$ gcc [-옵션] 파일
+```
+```
+C 프로그램을 컴파일한다. 옵션을 사용하지 않으면 실행파일 a.out를 생성한다
+```
 
+- 간단한 컴파일 및 실행
+```
+$ gcc longest.c
+```
+```
+$ a.out // 실행
+```
+- -c 옵션: 목적 파일 생성
+```
+$ gcc –c longest.c
+```
+- -o 옵션: 실행 파일 생성
+```
+$ gcc –o longest longest.o 혹은 $ gcc –o longest longest.c
+```
+- 실행
+```
+$ longest // 실행
+```
+
+## 단일 모듈 프로그램:longest.c 
+```
+#include <stdio.h>
+#include <string.h>
+#define MAXLINE 100
+char line[MAXLINE]; // 입력 줄
+char longest[MAXLINE]; // 가장 긴 줄
+void copy(char from[], char to[]);
+/*입력 줄 가운데 가장 긴 줄 프린트 */
+int main()
+{
+int len, max = 0;
+while(fgets(line,MAXLINE,stdin) !=
+NULL) {
+len = strlen(line);
+if (len > max) {
+max = len;
+copy(line, longest);
+}
+}
+if (max > 0) // 입력 줄이 있었다면
+printf("%s", longest);
+return 0;
+}
+/* copy: from을 to에 복사; to가 충분히 크다고 가정*/
+void copy(char from[], char to[])
+{
+int i;
+i = 0;
+while ((to[i] = from[i]) != '\0')
+++i;
+}
+```
+
+## 다중 모듈 프로그램 
+- 단일 모듈 프로그램
+  - 코드의 재사용(reuse)이 어렵고,
+  - 여러 사람이 참여하는 프로그래밍이 어렵다
+  - 예를 들어 다른 프로그램에서 copy 함수를 재사용하기 힘들다
+
+- 다중 모듈 프로그램
+  - 여러 개의 .c 파일들로 이루어진 프로그램
+  - 일반적으로 복잡하며 대단위 프로그램인 경우에 적합
+
+![image](https://github.com/user-attachments/assets/b8ce502c-4491-465e-a05e-0f0192117351)
+
+## 다중 모듈 프로그램: 예
+- main 프로그램과 copy 함수를 분리하여 별도 파일로 작성
+  - main.c
+  - copy.c
+  - copy.h // 함수의 프로토타입을 포함하는 헤더 파일
+
+- 컴파일
+```
+$ gcc -c main.c
+```
+```
+$ gcc -c copy.c
+```
+```
+$ gcc -o main main.o copy.o
+```
+혹은 
+```
+$ gcc -o main main.c copy.c
+```
+
+## main.c 
+```
+#include <stdio.h>
+#include <string.h>
+#include "copy.h"
+char line[MAXLINE]; // 입력 줄
+char longest[MAXLINE]; // 가장 긴 줄
+/*입력 줄 가운데 가장 긴 줄 프린트 */
+int main()
+{
+int len, max = 0;
+while (fgets(line,MAXLINE,stdin) != NULL) {
+len = strlen(line);
+if (len > max) {
+max = len;
+copy(line, longest);
+}
+}
+if (max > 0) // 입력 줄이 있었다면
+printf("%s", longest);
+return 0;
+}
+```
+
+## copy.c 
+```
+#include <stdio.h>
+/* copy: from을 to에 복사; to가 충분히 크다고 가정*/
+void copy(char from[], char to[])
+{
+int i;
+i = 0;
+while ((to[i] = from[i]) !='\0')
+++i;
+}
+```
+## copy.h
+```
+#define MAXLINE 100
+void copy(char from[], char to[]);
+```
+
+# 자동 빌드 도구 
+## make 시스템의 필요성 
+- 다중 모듈 프로그램을 구성하는 일부 파일이 변경된 경우?
+  - 변경된 파일만 컴파일하고, 파일들의 의존 관계에 따라서 필요한 파일만 다시 컴파일하여 실행 파일을 만들면 좋다
+
+- 예
+  - copy.c 소스 코드를 수정
+  - 목적 파일 copy.o 생성
+  - 실행파일을 생성
+
+- make 시스템
+- 대규모 프로그램의 경우에는 헤더, 소스 파일, 목적 파일, 실행 파일의 모든 관계를 기억하고 체계적으로 관리하는 것이 필요
+- make 시스템을 이용하여 효과적으로 작업
+
+## 메이크파일 
+- 메이크파일
+  - 실행 파일을 만들기 위해 필요한 파일들
+  - 그들 사이의 의존 관계
+  - 만드는 방법을 기술
+
+- make 시스템
+  - 메이크파일을 이용하여 파일의 상호 의존 관계를 파악하여 실행 파일을 쉽게 다시 만듬
+
+- 사용법
+```
+$ make [-f 메이크파일]
+```
+```
+make 시스템은 메이크파일(makefile 혹은 Makefile)을 이용하여 보통 실행 파일을 빌드한다. 옵션을 사용하여 별도의 메이크파일을 지정할 수 있다
+```
+
+## 마이크파일의 구성 
+- 메이크파일의 구성 형식
+  - 목표(target): 의존리스트(dependencies) 명령리스트(commands)
+
+- 예: Makefile
+```
+main: main.o copy.o
+gcc -o main main.o
+copy.o
+main.o: main.c copy.h
+gcc -c main.c
+copy.o: copy.c
+gcc -c copy.c
+```
+- 의존 관계 그래프
+![image](https://github.com/user-attachments/assets/dca89e04-d00b-4206-b7c1-4fe8c27eb808)
+
+## 메이크파일의 구성 
+- make 실행
+```
+$ make 혹은 $ make main 
+gcc -c main.c
+gcc -c copy.c
+gcc -o main main.o copy.o
+```
+- copy.c 파일이 변경된 후
+```
+$ make
+gcc -c copy.c
+gcc -o main main.o copy.o
+```
+![image](https://github.com/user-attachments/assets/59b6924f-66ea-47b6-994c-937b3e7eff48)
+
+# gdb 디버거  
+## gdb
+- 가장 대표적인 디버거
+  - GNU debugger(gdb)
+
+- gdb 주요 기능
+  - 정지점(breakpoint) 설정
+  - 한 줄씩 실행
+  - 변수 접근 및 수정
+  - 함수 탐색
+  - 추적(tracing)
+```
+$ gdb [실행파일]
+```
+```
+gdb 디버거는 실행파일을 이용하여 디버깅 모드로 실행한다
+```
+- gdb 사용을 위한 컴파일
+  - -g 옵션을 이용하여 컴파일
+```
+$ gcc -g -o longest longest.c
+```
+  - 다중 모듈 프로그램
+```
+$ gcc -g -o main main.c copy.c
+```
+- gdb 실행
+```
+$ gdb [실행파일]
+```
+```
+gdb 디버거는 실행파일을 이용하여 디버깅 모드로 실행한다
+```
+
+## gdb 기능
+- 소스보기 : l(ist)
+  - l [줄번호] 지정된 줄을 프린트
+  - l [파일명]:[함수명] 지정된 함수를 프린트
+  - set listsize n 출력되는 줄의 수를 n으로 변경
+```
+(gdb) l copy
+1 #include <stdio.h>
+2
+3 /* copy: copy 'from' into 'to'; assume to is big enough */
+4 void copy(char from[], char to[])
+5 {
+6 int i;
+7
+8 i = 0;
+9 while ((to[i] = from[i]) != '\0')
+10 ++i;
+```
+- 정지점 : b(reak), clear, d(elete)
+  - b [파일:]함수 파일의 함수 시작부분에 정지점 설정
+  - b n n번 줄에 정지점을 설정
+  - b +n 현재 줄에서 n개 줄 이후에 정지점 설정
+  - b -n 현재 줄에서 n개 줄 이전에 정지점 설정
+  - info b 현재 설정된 정지점을 출력
+  - clear 줄번호 해당 정지점을 삭제
+  - d 모든 정지점을 삭제
+```
+(gdb) b copy
+Breakpoint 1 at 0x804842a: file copy.c, line 9.
+(gdb) info b
+Num Type Disp Enb Address What
+1 breakpoint keep y 0x0804842a in copy at copy.c:9
+```
+- 프로그램 수행
+  - r(un) 인수 명령줄 인수를 받아 프로그램 수행
+  - k(ill) 프로그램 수행 강제 종료
+  - n(ext) 멈춘 지점에서 다음 줄을 수행하고 멈춤
+  - s(tep) n과 같은 기능 함수호출 시 함수내부로 진입
+  - c(ontinue) 정지점을 만날 때 까지 계속 수행
+  - u 반복문에서 빠져나옴
+  - finish 현재 수행하는 함수의 끝으로 이동
+  - return 현재 수행중인 함수를 빠져나옴
+  - quit 종료
+```
+(gdb) r
+Starting program: /home/chang/바탕화면/src/long
+Merry X-mas !
+Breakpoint 1, copy (from=0x8049b60 "Merry X-mas !", to=0x8049760 "")
+at copy.c:8
+8 i = 0;
+```
+- 변수 값 프린트: p(rint)
+  - p [변수명] 해당 변수 값 프린트
+  - p 파일명::[변수명] 특정 파일의 전역변수 프린트
+  - p [함수명]::[변수명] 특정 함수의 정적 변수 프린트
+  - info locals 현재 상태의 지역변수 리스트
+```
+(gdb) p from
+$1 = 0x8049b60 "Merry X-mas !"
+(gdb) n
+9 while ((to[i] = from[i]) != '\0')
+(gdb) n
+10 ++i;
+(gdb) p to
+$2 = 0x8049760 "M"
+```
+```
+gdb) c
+Continuing.
+Happy New Year !
+Breakpoint 1, copy(from=0x8049b60
+"Happy New Year !",
+to=0x8049760 "Merry X-mas !")
+at copy.c:9
+8 i = 0;
+(gdb) p from
+$3 = 0x8049b60 "Happy New Year !"
+(gdb) n
+9 while ((to[i] = from[i])!='\0')
+(gdb) n
+10 ++i;
+```
+```
+(gdb) p to
+$4 = 0x8049760 "Herry X-mas !"
+(gdb) c
+Continuing.
+Happy New Year !
+Program exited normally
+```
+
+# 이클립스 통합개발환경 
+## 이클립스 통합개발환
+- 다양한 언어(C/C++, Java 등)를 지원하는 통합개발환경
+- 설치
+  - 이클립스 홈페이지에서 C/C++ 개발자를 위한 리눅스용 이클립스(Eclipse IDE for C/C++ Developers)를 다운받아 설치
+  - 사전에 make 시스템과 g++ 컴파일러 등이 설치되어야 함
+
+![image](https://github.com/user-attachments/assets/8bfd2921-8ddb-4115-a361-24637fd771ea)
+
+## 새로운 C 프로젝트 생성 
+- [Create a new C/C++ project] 혹은 [File]→[New]→[C/C++ Projects]
+- 프로젝트 선택 화면에서 [C Managed Build] 선택
+- 프로젝트 타입 [Hello World ANSI C Project] 선택
+- 컴파일러 선택 후 [Finish] 버튼 클릭
+- ‘HelloWorld.c’ 프로그램 자동으로 생성
+- 프로젝트 타입 [Empty Project]를 선택하면 빈 프로젝트가 생성
+
+![image](https://github.com/user-attachments/assets/a3439cbf-306f-4a4e-b0b1-a754920df21e)
+![image](https://github.com/user-attachments/assets/b65c80dc-ed06-4ede-a7b5-f37cca4a4782)
+
+## 메인 화면 
+- 좌측 [Project Explorer] 탐색 창
+  - 새로 생성된 프로젝트 확인
+  - 프로젝트 및 파일들을 탐색 가능
+  - 소스 파일은 src 폴더에, 헤더 파일은 include 폴더에 저장됨
+- 중앙 창
+  - 소스 파일 등을 편집할 수 있는 창
+- 우측 창의 [Outline] 탭
+  - 이 프로그램에서 사용하는 소스 파일들을 리스트
+  - 해당 파일을 선택하여 파일 내용을 확인하거나 편집 가능
+- 하단
+  - C 파일을 컴파일 혹은 실행한 결과를 보여주는 창들
+ 
+![image](https://github.com/user-attachments/assets/f223da51-ce36-4991-a130-63c50098d644)
+
+# vi 에디터 
+
+## vi 에디 
+- vi 에디터
+  - 기본 텍스트 에디터로 매우 강력한 기능을 가지고 있으나
+  - 배우는데 상당한 시간과 노력이 필요하다.
+```
+$ vi 파일*
+```
+
+![image](https://github.com/user-attachments/assets/9d70d78a-7f40-4102-b15e-470f399bf92e) 
+
+## 명령 모드/입력 모드 
+- vi 에디터는 명령 모드와 입력 모드가 구분되어 있으며 시작하면 명령 모드이다
+![image](https://github.com/user-attachments/assets/af6ca1e3-7c2e-4351-8fd9-1f9dba44686b)
+
+- 마지막 줄 모드
+  - :wq 작업 내용을 저장하고 종료 (ZZ와 동일한 기능)
+  - :q 아무런 작업을 하지 않은 경우의 종료
+  - :q! 작업 내용을 저장하지 않고 종료
+ 
+## vi 내부 명령어 
+- 원하는 위치로 이동하는 명령
+- 입력모드로 전환하는 명령
+- 수정 혹은 삭제 명령
+- 복사 및 붙이기
+- 기타 명령
+
+## 원하는 위치로 이동하는 명령 
+- 커서 이동
+![image](https://github.com/user-attachments/assets/d5c6056c-3110-47fd-95b3-fe7a630f2d24)
+
+- 화면 이동
+![image](https://github.com/user-attachments/assets/85dd3152-f580-4291-8568-e32260ba9466)
+
+- 특정 줄로 이동
+![image](https://github.com/user-attachments/assets/70a12b61-7bff-4351-baa4-112fffd5e3b5)
+
+- 탐색 (search)
+![image](https://github.com/user-attachments/assets/4cd15213-9477-461d-809a-0b1a02e16787)
+
+## 입력모드로 전환하는 명령 
+- 입력모드로 전환
+![image](https://github.com/user-attachments/assets/5954958a-a2ab-4b05-afa1-fdba2d9a49a2)
+
+![image](https://github.com/user-attachments/assets/e98882f5-ffbb-49f0-a84c-2eded13dac86)
+
+![image](https://github.com/user-attachments/assets/22f80188-0465-4bda-b5f0-d3cc3c8d9269)
+
+## 수정 혹은 삭제 명령 
+- 현재 커서를 중심으로 수정
+![image](https://github.com/user-attachments/assets/d81478e2-785a-4de7-bf1d-1a2db57d934e) 
+
+- 삭제
+![image](https://github.com/user-attachments/assets/e051a9cd-49a2-4655-8560-58c0cc68805a)
+
+## 대체, 수행취소/재수행 
+- 대체 명령
+![image](https://github.com/user-attachments/assets/c05c8dc0-57f4-4d45-ac83-ea1b89a5652c)
+
+- 수행취소/재수행
+![image](https://github.com/user-attachments/assets/24a47480-3610-4b0b-9883-d969cb3d2842)
+
+## 복사/붙이기 
+- 줄 내용 복사(copy)
+![image](https://github.com/user-attachments/assets/7a13de9b-064f-46fe-ac7a-dc100ad080a1)
+
+- 마지막으로 삭제/복사한 내용을 붙이기(put)
+![image](https://github.com/user-attachments/assets/705bc051-16fc-4b80-a388-4b4b8f638cd3)
+
+## 파일에 저장 및 끝내기 
+- 파일에 저장
+![image](https://github.com/user-attachments/assets/d73cff69-6e8f-4be0-9b2e-0420b9e39141)
+
+- 파일에 저장하고 끝내기
+![image](https://github.com/user-attachments/assets/e2fc0930-8958-4156-ad6e-8f1b8472b1a7)
+
+- 저장하지 않고 끝내기
+![image](https://github.com/user-attachments/assets/43556f4f-4543-4166-969f-8824666fb6c4)
+
+![image](https://github.com/user-attachments/assets/d55b4c9d-16cd-4986-b16c-121e59dac215)
+
+## 기타  
+- 다른 파일 편집
+![image](https://github.com/user-attachments/assets/8634fcbc-38bb-4dde-ae4b-8c576c2116d2)
+
+- 줄 번호 붙이기
+![image](https://github.com/user-attachments/assets/ab32e35d-5317-43f3-b407-7c1627f5cc9d)
+
+- 쉘 명령어 수행
+![image](https://github.com/user-attachments/assets/3c5802a6-141a-4ba4-8f72-c2cd2fab7168)
+
+# 핵심 개념
+- gedit는 GNU가 제공하는 대표적인 텍스트 편집기이다
+- gcc 컴파일러는 C 프로그램을 컴파일한다. 옵션을 사용하지 않으면 실행파일 a.out를 생성한다
+- make 시스템은 메이크파일(makefile 혹은 Makefile)을 이용하여 보통 실행 파일을 빌드한다
+- gdb 디버거는 실행파일을 이용하여 디버깅 모드로 실행한다
+- vi 에디터는 명령 모드와 입력 모드가 구분되어 있으며 시작한면 명령 모드이다
