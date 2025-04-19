@@ -2029,6 +2029,7 @@ export USERNAME BASH_ENV PATH
 ```
 
 ## 시작 파일 예: .bashrc
+```
 1 # .bashrc
 2 # 사용자 시작 파일
 3 # 히스토리 길이 설정
@@ -2042,8 +2043,480 @@ export USERNAME BASH_ENV PATH
 11 alias ls=’ls --color=auto’
 12 alias grep=’grep —color=auto’
 13 alias ll='ls -al --color=yes' 
+```
+
+# 별명 및 히스토리 기능 
+## 별명 
+- alias 명령어
+  - 문자열이 나타내는 기존 명령에 대해 새로운 이름을 별명으로 정의
+```
+$ alias 이름=문자열
+```
+```
+$ alias dir='ls –aF'
+```
+```
+$ dir
+```
+```
+$ alias h=history
+```
+```
+$ alias ll='ls –l‘
+```
+- 현재까지 정의된 별명들을 확인
+```
+$ alias # 별명 리스트
+alias dir='ls –aF‘
+alias h=history
+alias ll='ls –l'
+```
+- 이미 정의된 별명 해제
+```
+$ unalias 단어
+```
+
+## 히스토리 
+- 입력된 명령들을 기억하는 기능
+```
+$ history [-rh] [번호]
+```
+
+- 기억할 히스토리의 크기
+```
+$ HISTSIZE=100
+```
+
+- 로그아웃 후에도 히스토리가 저장되도록 설정
+```
+$ HISTFIESIZE=100
+```
+
+![image](https://github.com/user-attachments/assets/52bbd0d6-5bc8-4682-bd78-20e6af80e992)
+
+## 재실행 
+![image](https://github.com/user-attachments/assets/91b82241-77b1-4e06-b43f-1fff86841c7c)
+
+- 예
+```
+$ !! # 바로 전 명령 재실행
+```
+```
+$ !20 # 20번 이벤트 재실행
+```
+```
+$ !gcc # gcc로 시작하는 최근 명령 재실행
+```
+```
+$ !?test.c # test.c를 포함하는 최근 명령 재실행
+```
+
+# 변수 
+## 단순 변수 (simple variable)
+- 하나의 값(문자열)만을 저장할 수 있는 변수
+```
+$ 변수이름=문자열
+```
+```
+$ city=seoul
+```
+
+- 변수의 값 사용
+```
+$ echo $city
+```
+```
+seoul
+```
+- 변수에 어느 때나 필요하면 다른 값을 대입
+```
+$ city=pusan
+```
+- 한 번에 여러 개의 변수를 생성
+```
+$ country=korea city=seoul
+```
+
+## 단순 변수 
+- 한글 문자열을 값으로 사용
+```
+$ country=대한민국 city=서울
+```
+```
+$ echo $country $city
+```
+대한민국 서울
+- 따옴표를 이용하여 여러 단어로 구성된 문자열 저장 가능
+```
+$ address="서울시 용산구" 
+```
+
+## 리스트 변수(list variable)
+- 한 변수에 여러 개의 값(문자열)을 저장할 수 있는 변수
+```
+$ 이름=( 문자열리스트 )
+```
+```
+$ cities=(서울 부산 목포)
+```
+- 리스트 변수 사용
+![image](https://github.com/user-attachments/assets/e19a70de-85c3-414d-96a7-07c299f87bcc)
 
 
+## 리스트 변수 사용 예
+- 리스트 변수 사용
+```
+$ echo ${cities[*]}
+```
+```
+서울 부산 목포
+```
+```
+$ echo ${cities[1]}
+```
+```
+부산
+```
+- 리스트의 크기
+```
+$ echo ${#cities[*]} # 리스트 크기
+```
+```
+3
+```
+```
+$ echo ${cities[3]}
+```
+- 리스트 변수에 새로운 도시 추가
+```
+$ cities[3]=제주
+```
+```
+$ echo ${cities[3]}
+```
+```
+제주
+```
+
+## 표준입력 읽기
+- read 명령어
+  - 표준입력에서 한 줄을 읽어서 단어들을 변수들에 순서대로 저장
+  - 마지막 변수에 남은 문자열을 모두 저장
+```
+$ read 변수1 ... 변수n
+```
+
+```
+$ read x y
+```
+```
+Merry Christmas !
+```
+```
+$ echo $x
+```
+```
+Merry
+```
+```
+$ echo $y
+```
+```
+Christmas !
+```
+
+- 변수를 하나만 사용
+```
+$ read x
+```
+```
+Merry Christmas !
+```
+```
+$ echo $x
+```
+```
+Merry Christmas !
+```
+
+# 지역변수와 환경변수 
+## 환경변수와 지역변수 
+- 쉘 변수
+  - 환경변소와 지역변수 두 종류로 나눌 수 있다
+  - 환경 변수는 값이 자식 프로세스에게 상속되며 지역 변수는 그렇지 않다
+
+![image](https://github.com/user-attachments/assets/abbacb65-934a-4799-a83c-c5625ee19e21)
+
+## 환경변수와 지역변수 예
+```
+$ country=대한민국 city=서울
+```
+```
+$ export country
+```
+```
+$ echo $country $city
+```
+```
+대한민국 서울
+```
+```
+$ bash # 자식 쉘 시작
+```
+```
+$ echo $country $city
+``` 
+```
+대한민국
+```
+```
+$ ^D # 자식 쉘 끝
+``` 
+```
+$ echo $country $city
+```
+```
+대한민국 서울
+```
+
+## 사전 정의 환경변수(predefined environment variable) 
+- 그 의미가 미리 정해진 환경변수들 
+![image](https://github.com/user-attachments/assets/aa171a7d-e8e0-4500-93b4-2b810a842777)
+
+```
+$ echo 홈 = $HOME 사용자 = $USER 쉘 = $SHELL
+```
+```
+홈 = /user/faculty/chang 사용자 = chang 쉘 = /bin/bash
+```
+```
+$ echo 터미널 = $TERM 경로 리스트 = $PATH
+```
+```
+터미널 = xterm 경로 리스트 = /bin:/usr/bin:/usr/local/bin
+```
+
+## 사전 정의 지역 변수(predefined local variable)
+```
+#!/bin/bash
+```
+```
+# builtin.bash
+```
+```
+echo 이 스크립트 이름: $0
+echo 첫 번째 명령줄 인수: $1
+echo 모든 명령줄 인수: $*
+echo 이 스크립트를 실행하는 프로세스 번호: $$
+```
+```
+$ builtin.bash hello shell
+```
+```
+이 스크립트 이름: builtin.sh
+첫 번째 명령줄 인수: hello
+모든 명령줄 인수: hello shell
+이 스크립트를 실행하는 프로세스 번호: 1259
+```
+![image](https://github.com/user-attachments/assets/3d458e17-14d0-4411-b9b8-7480308334a3)
+
+# Bash 쉘 스크립
+
+## Bash 스크립트 작성 및 실행 과정
+- (1) 에디터를 사용하여 Bash 스크립트 파일을 작성한다.
+```
+#!/bin/bash
+```
+```
+# state.bash
+```
+```
+echo -n 현재 시간:
+date
+echo 현재 사용자:
+who
+echo 시스템 현재 상황:
+uptime
+```
+- (2) chmod를 이용하여 실행 모드로 변경한다 
+```
+$ chmod +x state.bash
+```
+- (3) 스크립트 이름을 타입핑하여 실행한다 
+```
+$ state.bash
+```
+
+## if 문 
+- if 문
+```
+if 조건식
+then
+명령들
+fi
+```
+- 조건식
+```
+[수식]
+```
+
+- 예
+```
+if [ $#-eq 1 ]
+then
+  wc $1
+fi
+```
+
+![image](https://github.com/user-attachments/assets/a315b776-ffef-4b1a-a696-66e5d8da0a7c)
+
+## if-then-else
+- if-then-else 구문
+```
+if 조건식
+then
+명령들
+else
+명령들
+fi
+```
+
+![image](https://github.com/user-attachments/assets/2f9d2995-9c31-450f-88e1-46e7efbd1415)
+
+# 수식 
+## 비교 연산 
+- 비교 연산은 산술 비교 연산, 문자열 비교 연산 
+![image](https://github.com/user-attachments/assets/7c500be6-66f2-4d00-b2ad-bd3ef4c6d763)
+
+## 문자열 비교 연산
+![image](https://github.com/user-attachments/assets/cbedfd8b-0651-4086-9729-f2e90847fae8)
+
+![image](https://github.com/user-attachments/assets/608296b3-3e21-4079-bdb5-9381bca956e3)
+
+## 파일 관련 연산 
+![image](https://github.com/user-attachments/assets/c5e1425a-61ad-4b6e-9758-3db8b94b7fef)
+
+## 파일 관련 연산: 예
+```
+if [ -e $file ]
+then # $file이 존재하면
+wc $file
+else # $file이 존재하지 않으면
+echo "오류 ! 파일 없음“
+fi
+
+```
+
+```
+if [ -d $dir ]
+then
+echo -n $dir 내의 파일과 서브디
+렉터리 개수:
+ls $dir | wc -l
+else
+echo $dir\: 디렉터리 아님
+fi
+```
+
+## 부울 연산자 
+- 조건식에 부울 연산자 사용 
+  - ! 부정(negation)
+  - && 논리곱(logical and)
+  - || 논리합(logical or)
+
+![image](https://github.com/user-attachments/assets/5645752f-0ff5-4374-872c-7d72e6e8af28)
+
+## 산술 연산 
+- 산술 연산
+```
+$ a=2+3
+```
+```
+$ echo $a
+```
+```
+$ a=`expr 2 + 3`
+```
+- let 명령어를 이용한 산술연산
+```
+$ let 변수=수식
+$ let a=2*3
+$ echo $a
+6
+$ let a=$a+2
+$ echo $a
+8
+$ let a*=10
+$ let b++
+```
+
+## 변수 타입 선언 
+- 변수 타입 선언: declare
+![image](https://github.com/user-attachments/assets/9caba08a-3edc-46f3-96c0-e5e1c52e0089)
+
+![image](https://github.com/user-attachments/assets/34137c39-3951-4fe4-ba36-08e1e684ce40)
+
+# 조건문 
+
+## Bash 제어구조
+- 조건
+if
+- 스위치
+case
+- 반복
+for, while 
+
+## 조건문
+![image](https://github.com/user-attachments/assets/4ed27ce1-7f94-4a71-a1a7-0b151af77690)
+
+- 중첩 조건문
+![image](https://github.com/user-attachments/assets/e0d1125a-c1bf-4ffb-bd39-8ff1d0c05d5d)
+
+## 새로운 조건식 
+- 새로운 조건
+if ((수식))
+…
+
+- 예
+![image](https://github.com/user-attachments/assets/b493e3cb-d981-411f-b557-0c5c5ff65ad8)
+
+
+## 산술 연산자 
+![image](https://github.com/user-attachments/assets/99431a5a-67f5-46c4-95fa-2b4ab88e660b)
+
+## 중첩 조건문: 
+```
+#!/bin/bash
+```
+```
+# 사용법: score1.bash
+```
+```
+# 점수에 따라 학점을 결정하여 프린트
+```
+```
+echo -n '점수 입력: '
+read score
+if (( $score >= 90 ))
+then
+echo A
+elif (( $score >= 80 ))
+then
+echo B
+elif (( $score >= 70 ))
+then
+echo C
+else
+echo 노력 요함
+fi
+```
+```
+$score1.bash
+```
+```
+점수 입력: 85 
+B
+```
 
 
 
