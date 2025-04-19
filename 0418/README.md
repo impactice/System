@@ -681,3 +681,732 @@ On since Tue Sep 14 12:15 (KST) on tty2 from tty2
 # systemctl enable apache2
 # systemctl status apache2
 ```
+
+- mariadb 설치한 경우
+  - 구동(start), 서비스 활성화(enable), 실행 상태(status) 확인
+```
+# systemctl start mariadb
+# systemctl enable mariadb
+# systemctl status mariadb
+```
+- 방화벽에 http 등록하고(add-service), 바로 적용(reload), 리스트해서 확인(list-all)
+```
+# firewall-cmd --permanent --add-service=http
+# firewall-cmd –-reload
+# firewall-cmd --list-all
+```
+
+- httpd는 기본적으로 /var/www/html 디렉터리에서 index.html 파일을 읽어서 웹 브라우저에 디스플레이함
+  - index.html을 만들어 넣어서 테스트 할 수 있음
+  - PHP의 동작을 확인하기 위해 phinfo.php 파일 생성 <?php phpinfo(); ?> 
+
+- 테스트 페이지가 확인 http://IP주소/index.html
+
+- PHP의 동작 확인 http://IP주소/phpinfo.php
+
+## FTP 서버 설치 
+- 대표적인 FTP 서버
+  - vsFTPD(Very Secure File Transfer Protocol Daemon) 
+- FTP 서버 설치
+```
+# apt install vsftpd
+```
+- vsftpd를 시작(start), 서비스 활서화(enable)
+```
+# systemctl start vsftpd.service
+```
+```
+# systemctl enable vsftpd.service
+```
+
+- 방화벽에 신뢰할 수 있는 서비스로 등록
+```
+# firewall-cmd --add-service=ftp
+```
+
+## 원격 접속 서버 SSH 
+- 원격 접속
+  - 로컬 호스트에서 원격으로 다른 호스트에 접속하여 사용하는 것
+  - telnet은 보안 취약점으로 인해 리눅스에서는 지원하지 않음
+  - 보안을 강화한 원격 접속 서비스인 ssh(Secure Shell)을 지원
+
+- ssh 데몬(ssh) 설치 후 서비스 시작
+```
+# apt install ssh
+```
+```
+# systemctl start ssh 
+```
+```
+# systemctl enable ssh
+```
+```
+# systemctl status ssh
+```
+
+# 파일 전송 
+## FTP(File Transfer Protocol) 
+- 파일 전송 프로토콜(File Transfer Protocol, FTP)의 약자
+  - FTP 서버와 클라이언트 사이의 파일 전송을 위한 서비스
+  - 주로 파일을 업로드 하거나 다운로드 하기 위하여 사용
+
+- ftp 혹은 sftp(secure ftp) 명령어를 이용하여 파일 전송
+```
+$ ftp -n [호스트명]
+```
+```
+$ sftp -n [호스트명]
+```
+```
+호스트명으로 지정된 FTP 서버에 접속하여 파일을 업로드 혹은 다운로드 한다
+```
+
+## ftp, sftp 명령어 
+- ftp 시작(유닉스)
+```
+$ ftp cs.sookmyung.ac.kr
+```
+```
+Connected to cs.sookmyung.ac.kr.
+220 cs FTP server ready.
+Name (cs.sookmyung.ac.kr:chang):
+331 Password required for chang.
+Password:
+230 User chang logged in.
+Remote system type is UNIX.
+Using binary mode to transfer
+files.
+ftp>
+```
+
+- sftp 시작(리눅스)
+```
+$ sftp linux.sookmyung.ac.kr
+```
+```
+Connecting to linux.sookmyung.ac.kr...
+chang@linux.sookmyung.ac.kr's password:
+sftp > cd test
+Sftp > ls
+…
+```
+
+- 다운로드
+```
+sftp> get 파일명
+```
+```
+sftp> mget 파일명
+```
+
+- 업로드
+```
+sftp> put 파일명
+```
+```
+sftp> mput 파일명
+```
+
+## ftp 내부 명령어 
+![image](https://github.com/user-attachments/assets/fe7692ad-74fe-497f-8051-c6a807cce6e9) 
+
+## MS 윈도우에서 sftp 사용 
+- OpenSSH 클라이언트 추가 설치
+  - [설정] -> [앱] -> [앱 및 기능] -> [선택적 기능] -> [OpenSSH 클라이언트]
+  - sftp 명령어 실행
+```
+$ sftp chang@linux.sookmyung.ac.kr
+```
+
+![image](https://github.com/user-attachments/assets/0b199f53-fcc5-41e7-aca6-628308837713)
+
+## MS 윈도우에서 FileZilla 사용 
+- FileZilla
+  - https://filezilla-project.org
+
+![image](https://github.com/user-attachments/assets/e125dc40-9f04-4d06-a3fc-9ab2dc871bbe) 
+
+# 원격 접속 
+## telnet 
+- 내 컴퓨터에서 원격 호스트에 연결하여 사용할 수 있다
+  - 지역 호스트(local host), 원격 호스트(remote host)
+``` 
+$ telnet 호스트명(혹은 IP 주소)
+```
+```
+지정된 원격 호스트에 원격으로 접속한다
+```
+- 예
+```
+$ telnet cs.sookmyung.ac.kr
+```
+```
+Trying 203.252.201.11...
+Connected to cs.
+Escape character is '^]'.
+SunOS 5.9
+login:
+```
+
+## 안전한 원격 접속: ssh(secure shell)
+- 원격 로그인 혹은 원격 명령 실행을 위한 프로그램
+  - 보안을 위해 강력한 인증 및 암호화 기법 사용
+  - 기존의 rsh, rlogin, telnet 등을 대체하기 위해 설계됨
+
+```
+$ ssh 사용자명@호스트명
+```
+```
+$ ssh -l 사용자명 호스트명
+```
+```
+지정된 원격 호스트에 사용자명으로 원격으로 접속한다
+```
+
+- 예
+```
+$ ssh chang@linux.sookmyung.ac.kr
+```
+```
+chang@linux.sookmyung.ac.kr's password:
+```
+
+## 원격 명령 실행 
+- 사용법
+```
+$ ssh 호스트명 명령
+```
+- 예
+```
+$ ssh linux.sookmyung.ac.kr who
+```
+```
+chang@linux.sookmyung.ac.kr's password:
+root :0 2022-02-09 07:48
+chang pts/1 2022-02-10 09:53
+```
+
+## MS 윈도우에서 원격 접속: ssh 
+- 원격 접속을 위해 OpenSSH 클라이언트를 추가 설치
+- 명령 프롬프트 또는 실행 창에서 ssh 명령어를 실행
+![image](https://github.com/user-attachments/assets/d7254194-8894-4f1b-8517-fd9c3eb9f3ff)
+
+## 호스트 확인 ping
+- 원격 컴퓨터의 상태를 확인
+```
+$ ping 호스트명
+```
+```
+지정된 원격 호스트가 도달 가능한지 테스트하여 상태를 확인한다
+```
+
+- 예
+```
+$ ping www.kbs.co.kr
+```
+```
+PING www.kbs.co.kr (211.233.32.11) 56(84) bytes of data.
+64 bytes from 211.233.32.11: icmp_seq=1 ttl=245 time=2.22 ms
+64 bytes from 211.233.32.11: icmp_seq=2 ttl=245 time=2.19 ms
+64 bytes from 211.233.32.11: icmp_seq=3 ttl=245 time=2.85 ms
+...
+
+```
+# 원격 데스크톱 연결 
+## 원격 데스크톱 연결 
+- 원격 데스트톱 프로토콜(Remote Desktop Protocol, RDP)
+  - 원격 데스크톱 연결을 위한 프로토콜
+  - 다른 컴퓨터에 GUI 인터페이스를 제공하는 프로토콜
+
+- 윈도우에서 원격 데스크톱 연결
+![image](https://github.com/user-attachments/assets/16cd269e-1b43-449a-a5f9-376bb641ea01)
+
+![image](https://github.com/user-attachments/assets/b742772f-576b-445f-af05-11cede25c59a)
+
+## 원격 데스크톱 연결 
+![image](https://github.com/user-attachments/assets/4faa2cdc-7329-4585-86d4-b7ea23430b93) 
+
+## 원격 데스크톱 설치 
+- 자동설치 도구 apt를 이용하여 xrdp 서버 설치
+```
+# apt install xrdp
+```
+- systemctl 명령으로 xrdp 서비스 시작
+```
+# systemctl start xrdp.service
+```
+- systemctl 명령으로 xrdp 서비스가 실행되었는지 확인
+```
+# systemctl status xrdp.service
+```
+```
+● xrdp.service - xrdp daemon
+Loaded: loaded (/lib/systemd/system/xrdp.service; enabled; vendor preset: >
+Active: active (running) since Mon 2021-08-30 12:01:20 KST; 1 day 4h ago
+Docs: man:xrdp(8)
+man:xrdp.ini(5)
+Main PID: 855 (xrdp)
+Tasks: 2 (limit: 9358)
+Memory: 22.4M
+```
+
+- 부팅할 때 xrdp 서비스가 자동으로 실행되도록 설정
+```
+# systemctl enable xrdp.service
+```
+
+- 방화벽에서 xrdp의 포트를 열어준 후 방화벽 재시작
+```
+# apt install ufw
+```
+```
+# ufw enable
+```
+```
+# ufw allow from any to any port 3389
+```
+
+# 월드 와이드 웹 
+## 월드 와이드 웹(World Wide Web, WWW, W3) 
+- 월드 와이드 웹(WWW)
+  - 인터넷에 연결된 컴퓨터들을 통해 사람들이 정보를 공유할 수 있는 전세계적인 정보 공간 
+
+- 하이퍼텍스트(hypertext)
+  - 문서 내의 어떤 위치에서 하이퍼링크를 통하여 연결된 문서나 미디어에 쉽게 접근
+  - 하이퍼텍스트 작성 언어: HTML(Hyper Text Markup Language)
+
+- HTTP(Hyper Text Transfer Protocol)
+  - 웹 서버와 클라이언트가 통신할 때에 사용하는 프로토콜
+  - 웹 문서뿐만 아니라 일반 문서, 음성, 영상, 동영상 등 다양한 형식의 데이터 전송
+
+- URL(Uniform Resource Locator) 
+  - 인터넷에 존재하는 여러 가지 자원들에 대한 주소 체계
+  - http://www.mozila.or.kr
+ 
+## 웹 브라우저(web browser)
+- 웹 브라우저
+  - WWW에서 정보를 검색하는 데 사용하는 소프트웨어
+  - WWW에서 가장 핵심이 되는 소프트웨어
+  - 웹페이지 열기, 최근 방문한 URL 및 즐겨찾기 제공, 웹페이지 저장
+
+- 웹 브라우저 종류
+  - 1993년, 모자이크(Mosaic)
+  - 1994년, 넷스케이프(Netscape)
+  - 1995년, 인터넷 익스플로러(Internet Explorer)
+  - 파이어폭스(Firefox)
+  - 사파리(Safari)
+  - 크롬(Chrome)
+
+## 크롬(Chrome) 
+- 구글 크롬
+  - 빠른 속도가 장점이며 간결한 디자인으로 초보자도 쉽게 사용
+  - 악성코드 및 피싱 방지 기능을 사용하여 안전하고 보호된 웹 환경
+
+## 사파리(Safari)
+- 애플 사파리
+  - 빠른 속도
+  - 모바일용 사파리(아이팟, 아이폰, 아이패드)
+
+## 파이어폭스(Firefox)
+- 모질라(Mozilla) 파이어폭스
+  - 사용자 편의를 위해 스마트 주소창, 탭 브라우징, 라이브 북마크, 통합 검색, 다양한 검색 엔진 지원 등을 제공
+
+# 핵심 개념 
+- 인터넷은 TCP/IP 프로토콜을 이용해 정보를 주고 받는 전세계적인 공개 컴퓨터 통신망이다
+- 아파치 웹 서버, FTP 서버, 원격 접속 서버를 설치한다
+- ftp 혹은 sftp 명령어를 이용하여 파일을 전송할 수 있다
+- telnet 혹은 ssh 명령어를 이용하여 원격 호스트에 접속할 수 있다
+- 웹 서버, FTP 서버, 원격 접속 서버를 설치할 수 있다 
+
+# 파일 속성으로 파일 찾기 
+## find 명령어 
+- find 명령어
+  - 파일 이름이나 속성을 이용하여 해당하는 파일을 찾는다
+
+- 사용법
+```
+$ find 디렉터리 [-옵션]
+```
+```
+옵션의 검색 조건에 따라 지정된 디렉터리 아래에서 해당되는 파일들을 모두 찾아 출력한다
+```
+
+- 파일명을 명시하는 -name 옵션
+```
+$ find 디렉터리 –name 파일명 -print 혹은 -ls
+```
+```
+지정된 디렉터리 아래에서 파일명에 해당되는 파일들을 모두 찾아 그 경로를 출력한다
+```
+- 예
+```
+$ find ~ –name src -print
+```
+```
+/home/chang/linux/src
+```
+```
+$ find ~ –name src -ls
+```
+```
+89090 4 drwxrwxr-x 13 chang cs 4096 9월22 /home/chang/linux/src
+```
+```
+$ find /usr –name “*.c” –print 
+```
+
+## find 명령어: 검색 조건 
+![image](https://github.com/user-attachments/assets/3c286e8a-b3f9-4b19-b7bc-6c35a0632275)
+
+- 파일의 소유자(-user)로 검색
+```
+$ find . -user chang –print
+```
+
+- 파일 크기(-size)로 검색
+```
+$ find . -size +1024 -print
+```
+
+- 파일 종류(-type)로 검색
+```
+d : 디렉터리 f: 일반 파일 l: 심볼릭 링크
+b: 블록 장치 파일 c: 문자 장치 파일 s: 소켓 파일
+```
+```
+$ find ~ -type d –print
+```
+
+- 파일의 접근권한(-perm)으로 검색
+```
+$ find . -perm 700 -ls
+```
+
+- 파일의 접근 시간(-atime) 혹은 수정 시간(-mtime)으로 검색
+```
++n: 현재 시각을 기준으로 n일 이상 전
+n: 현재 시각을 기준으로 n일 전
+-n: 현재 시각을 기준으로 n일 이내
+```
+```
+$ find . -atime +30 -print
+```
+```
+$ find . -mtime -7 -print
+```
+
+## find 명령어: 검색 조건 조합 
+- find 명령어는 여러 검색 옵션을 조합해서 사용할 수 있다
+
+- 예 
+```
+$ find . -type d -perm 700 -print
+```
+```
+$ find . -name core -size +2048 -ls
+```
+
+## find 명령어: 검색된 파일 처리
+- find 명령어의 -exec 옵션
+  - 검색한 모든 파일을 대상으로 동일한 작업(명령어)을 수행
+
+- 예
+```
+$ find . -name core -exec rm -i {} \;
+```
+```
+$ find . -name “*.c” -atime +30 -exec ls -l {} \;
+```
+
+# 파일 필터링 
+## grep 명령어 
+- 사용법
+```
+$ grep 패턴 파일*
+```
+```
+파일(들)을 대상으로 지정된 패턴의 문자열을 검색하고, 해당 문자열을 포함하는 줄들을 출력한다
+```
+
+![image](https://github.com/user-attachments/assets/68b68cc2-faee-4158-949a-f42e56db08d9)
+
+```
+$grep with you.txt
+```
+```
+Until you come and sit awhile with me
+There is no life - no life without its hunger;
+But when you come and I am filled with wonder,
+```
+```
+$grep -w with you.txt
+```
+```
+Until you come and sit awhile with me
+But when you come and I am filled with wonder,
+```
+```
+$grep -n with you.txt 
+```
+```
+4:Until you come and sit awhile with me
+15:There is no life - no life without its hunger;
+17:But when you come and I am filled with wonder,
+```
+
+```
+$grep -i when you.txt
+```
+```
+When I am down and, oh my soul, so weary
+When troubles come and my heart burdened be
+I am strong, when I am on your shoulders
+But when you come and I am filled with wonder,
+```
+```
+$grep -v raise you.txt
+```
+```
+When I am down and, oh my soul, so weary
+When troubles come and my heart burdened be
+Then, I am still and wait here in the silence
+Until you come and sit awhile with me
+I am strong, when I am on your shoulders
+There is no life - no life without its hunger;
+Each restless heart beats so imperfectly;
+But when you come and I am filled with wonder,
+Sometimes, I think I glimpse eternity
+```
+
+## grep 명령어의 옵션 
+![image](https://github.com/user-attachments/assets/18b6da1c-db56-49e2-af0f-205df0b6167a)
+
+## 정규식 
+![image](https://github.com/user-attachments/assets/e760e5c0-91a9-41a9-8337-83d277c33524)
+
+## 정규식 사용 예 
+```
+$ grep 'st..' you.txt
+```
+```
+Then, I am still and wait here in the silence
+You raise me up, so I can stand on mountains
+You raise me up, to walk on stormy seas
+I am strong, when I am on your shoulders
+Each restless heart beats so imperfectly;
+```
+```
+$ grep 'st.*e' you.txt
+```
+```
+Then, I am still and wait here in the silence
+You raise me up, to walk on stormy seas
+I am strong, when I am on your shoulders
+Each restless heart beats so imperfectly;
+```
+```
+$ grep –w 'st.*e' you.txt
+```
+```
+Then, I am still and wait here in the silence
+```
+
+## 파이프와 함께 grep 명령어 사용
+- 파이프와 함께 grep 명령어 사용
+  - 어떤 명령어를 실행하고 그 실행 결과 중에서 원하는 단어 혹은 문자열 패턴을 찾고자 할 때 사용함.
+
+- 예
+```
+$ ls -l | grep chang
+```
+```
+$ ps –ef | grep chang
+```
+
+# 파일 정렬
+
+## 정렬: sort 명령어 
+- 사용법 
+``` 
+$ sort [-옵션] 파일*
+```
+```
+텍스트 파일(들)의 내용을 줄 단위로 정렬한다. 옵션에 따라 다양한 형태로 정렬한다
+```
+
+- 정렬 방법
+  - 정렬 필드를 기준으로 줄 단위로 오름차순으로 정렬한다.
+  - 기본적으로는 각 줄의 첫 번째 필드가 정렬 필드로 사용된다.
+  - -r 옵션을 사용하여 내림차순으로 정렬할 수 있다
+
+## sort 명령어 예 
+```
+$ sort you.txt
+```
+```
+But when you come and I am filled with wonder,
+Each restless heart beats so imperfectly;
+I am strong, when I am on your shoulders
+Sometimes, I think I glimpse eternity
+Then, I am still and wait here in the silence
+There is no life - no life without its hunger;
+Until you come and sit awhile with me
+When I am down and, oh my soul, so weary
+When troubles come and my heart burdened be
+You raise me up, so I can stand on mountains
+You raise me up, to more than I can be
+You raise me up, to walk on stormy seas
+```
+
+```
+$ sort -r you.txt
+```
+```
+You raise me up, to walk on stormy seas
+You raise me up, to more than I can be
+You raise me up, so I can stand on mountains
+When troubles come and my heart burdened be
+When I am down and, oh my soul, so weary
+Until you come and sit awhile with me
+There is no life - no life without its hunger;
+Then, I am still and wait here in the silence
+Sometimes, I think I glimpse eternity
+I am strong, when I am on your shoulders
+Each restless heart beats so imperfectly;
+But when you come and I am filled with wonder,
+```
+
+## 정렬 필드 지정 
+![image](https://github.com/user-attachments/assets/148eaabe-7dcf-4327-aed8-9d26f7e0ce4d)
+
+
+## 정렬 필드 지정 예 
+```
+$ sort –k 3 you.txt 혹은 sort +2 –3 you.txt
+```
+```
+Then, I am still and wait here in the silence
+When I am down and, oh my soul, so weary
+Until you come and sit awhile with me
+When troubles come and my heart burdened be
+Each restless heart beats so imperfectly;
+You raise me up, so I can stand on mountains
+You raise me up, to more than I can be
+You raise me up, to walk on stormy seas
+There is no life - no life without its hunger;
+I am strong, when I am on your shoulders
+Sometimes, I think I glimpse eternity
+But when you come and I am filled with wonder,
+```
+
+## sort 명령어의 옵션 
+![image](https://github.com/user-attachments/assets/a9470eb5-c7e4-4548-807d-110f328fc473)
+
+## sort 명령어의 옵션 예
+- -o 출력파일 옵션
+  - 정렬된 내용을 지정된 파일에 저장할 수 있다.
+```
+$ sort –o sort.txt you.txt
+```
+- -n 옵션
+  - 숫자 문자열의 경우에 숫자가 나타내는 값의 크기에 따라 비교하여 정렬할 수 있다.
+  - 예: “49”와 “100
+
+## 필드 구분 문자 지정 
+```
+$ sort –t: -k 3 -n /etc/passwd
+```
+```
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/bin:/sbin/nologin
+daemon:x:2:2:daemon:/sbin:/sbin/nologin
+adm:x:3:4:adm:/var/adm:/sbin/nologin
+lp:x:4:7:lp:/var/spool/lpd:/sbin/nologin
+sync:x:5:0:sync:/sbin:/bin/sync
+shutdown:x:6:0:shutdown:/sbin:/sbin/shutdown
+halt:x:7:0:halt:/sbin:/sbin/halt
+mail:x:8:12:mail:/var/spool/mail:/sbin/nologin
+operator:x:11:0:operator:/root:/sbin/nologin
+games:x:12:100:games:/usr/games:/sbin/nologin
+ftp:x:14:50:FTP User:/var/ftp:/sbin/nologin
+...
+```
+
+# 파일 비교 
+## 파일 비교: cmp 명령어 
+- 사용법
+```
+$ cmp 파일1 파일2
+```
+```
+파일1과 파일2가 같은지 비교한다
+```
+- 출력
+  - 두 파일이 같으면 아무 것도 출력하지 않음
+  - 두 파일이 서로 다르면 서로 달라지는 위치 출력
+- 예 
+```
+$ cmp you.txt me.txt
+```
+```
+you.txt me.txt 다름: 340 자, 10 행
+```
+
+## 파일 비교: diff 
+- 사용법
+
+```
+$ diff [-i] 파일1 파일2
+```
+```
+파일1과 파일2를 줄 단위로 비교하여 그 차이점을 출력한다.
+-i 옵션은 대소문자를 무시하여 비교한다
+```
+
+- 출력
+  - 첫 번째 파일을 두 번째 파일 내용과 같도록 바꿀 수 있는 편집 명령어 형 
+
+## diff 출력: 편집 명령어 
+- 추가(a)
+  - 첫 번째 파일의 줄 n1 이후에 두 번째 파일의 n3부터 n4까지의 줄들을 추가하면 두 파일은 서로 같다
+
+n1 a n3,n4
+> 추가할 두 번째 파일의 줄들
+
+- 예
+```
+$ diff you.txt me.txt
+```
+```
+9a10,13
+>
+> You raise me up, so I can stand on mountains
+> You raise me up, to walk on stormy seas
+> I am strong, when I am on your shoulders
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
