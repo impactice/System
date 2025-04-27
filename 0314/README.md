@@ -26,5 +26,6 @@
 ### X 윈도우 시작 
 - X 윈도우 로그인(우분투, CentOS)
 
+![image](https://github.com/user-attachments/assets/2a414126-1da8-4381-a193-f23f92e7df04)
 
 
