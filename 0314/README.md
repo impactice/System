@@ -54,6 +54,16 @@
 
 ![image](https://github.com/user-attachments/assets/4422ce1d-7fdd-4017-86f8-d94388235944)
 
+### 데스크톱 환경(Desktop Environment)
+- 데스크톱 환경
+  - 윈도우 관리자에 여러 유틸리티들을 패키지화 한 통합된 GUI
+  - 아이콘, 창, 도구 모음, 폴더, 배경 화면, 데스크톱 위젯 등 제공
+  - 윈도우 관리자만 쓰는 것보다는 초보자들이 사용하기 편리
+  - GNOME, KDE(K Desktop Environment) 
 
-
-
+- 윈도우 관리자
+  - 그래픽 사용자 인터페이스 환경에서 데스크 탑 상의 각 윈도우를 관리하는 소프트웨어
+  - 전통적인 윈도우 관리자로
+    - TWM, MWM, FVWM, Window Maker
+   
+###  우분투 데스크톱 환경
