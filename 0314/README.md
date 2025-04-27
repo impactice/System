@@ -28,4 +28,32 @@
 
 ![image](https://github.com/user-attachments/assets/2a414126-1da8-4381-a193-f23f92e7df04)
 
+## X 윈도우와 데스크톱 환경
+### X 윈도우 구조 
+- X 윈도우 시스템
+  - 하나의 X 서버와 여러 개의 X 클라이언트들로 구성
+
+![image](https://github.com/user-attachments/assets/56e4a107-3e36-40e1-aa84-3e53b8327c90)
+
+- X 클라이언트
+  - X 윈도우에서 수행되는 모든 X 응용 프로그램은 X 클라이언트
+  - 예를 들어, xterm, xclock, firefox 등
+  - X 응용 프로그램은 X 서버에 디스플레이를 요청한다
+
+- X 서버
+  - 클라이언트의 요청에 따라 화면에 디스플레이
+  - 마우스 클릭, 윈도우 이동, 키보드 누름 등과 같은 사용자 입력을 X 클라이언트에게 제공
+
+### X 응용 프로그램 실행
+- GNOME과 같은 데스크톱 환경
+  - 메뉴를 선택하여 X 응용 프로그램 실행
+
+- 터미널 창
+  - 명령어 사용
+  - xclock &
+
+![image](https://github.com/user-attachments/assets/4422ce1d-7fdd-4017-86f8-d94388235944)
+
+
+
 
