@@ -110,7 +110,6 @@ $ ls -i cs1.txt
 ```
 1196554 cs1.txt
 - 파일에 대한 모든 정보를 가지고 있음
-
 ![image](https://github.com/user-attachments/assets/8413e54b-370c-411d-b09e-db07b46e038a)
 
 
