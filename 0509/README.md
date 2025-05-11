@@ -149,6 +149,105 @@ int main(int argc, char *argv[])
 
 ![image](https://github.com/user-attachments/assets/f12e58f6-e276-4b98-beca-6b12adc850b8)
 
+## dbupdate.c 
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include "student.h"
+/* 학번을 입력받아 해당 학생 레코드를 수정한다. */
+int main(int argc, char *argv[])
+{
+  int fd, id;
+  char c;
+  struct student record;
+  if (argc < 2) {
+    fprintf(stderr, "사용법 : %s file\n", argv[0]);
+    exit(1);
+  }
+  if ((fd = open(argv[1], O_RDWR)) == -1) {
+    perror(argv[1]);
+    exit(2);
+  }
+  do {
+    printf("수정할 학생의 학번 입력: ");
+    if (scanf("%d", &id) == 1) {
+      lseek(fd, (long) (id-START_ID)*sizeof(record), SEEK_SET);
+      if ((read(fd, (char *) &record, sizeof(record)) > 0) && (record.id != 0)) {
+        printf("학번:%8d\t 이름:%4s\t 점수:%4d\n",
+          record.id, record.name, record.score);
+        printf("새로운 점수: ");
+        scanf("%d", &record.score);
+        lseek(fd, (long) -sizeof(record), SEEK_CUR);
+        write(fd, (char *) &record, sizeof(record));
+      } else printf("레코드 %d 없음\n", id);
+    } else printf("입력오류\n");
+    printf("계속하겠습니까?(Y/N)");
+    scanf(" %c",&c);
+  } while (c == 'Y');
+  close(fd);
+  exit(0);
+}
+```
+
+## 핵심 개념
+- 시스템 호출은 커널에 서비스를 요청하기 위한 프로그래밍 인터페이스로 응용 프로그램은 시스템 호출을 통해서 커널에 서비스를 요청할 수 있다
+- 파일 디스크립터는 열린 파일을 나타낸다
+- open() 시스템 호출을 파일을 열고 열린 파일의 파일 디스크립터를 반환한다
+- read() 시스템 호출은 지정된 파일에서 원하는 만큼의 데이터를 읽고 write() 시스템 호출은 지정된 파일에 원하는 만큼의 데이터를 쓴다
+- 파일 위치 포인터는 파일 내에 읽거나 쓸 위치인 현재 파일 위치를 가리킨다
+- lseek() 시스템 호출은 지정된 파일의 현재 파일 위치를 원하는 위치로 이동시킨다
+
+## 컴퓨터 시스템 구조
+- 유닉스 커널(kernel)
+  - 하드웨어를 운영 관리하여 다음과 같은 서비스를 제공
+  - 파일 관리(File management)
+  - 프로세스 관리(Process management)
+  - 메모리 관리(Memory management)
+  - 통신 관리(Communication management)
+  - 주변장치 관리(Device management)
+
+![image](https://github.com/user-attachments/assets/ffe37c0a-a1dc-4f3d-82a5-456deb05b830)
+
+## 시스템 호출 
+- 시스템 호출은 커널에 서비스 요청을 위한 프로그래밍 인터페이스 응용 프로그램은 시스템 호출을 통해서 커널에 서비스를 요청한다
+
+![image](https://github.com/user-attachments/assets/7161eda4-56e0-4da6-90a2-148bc2eb8761)
+
+## 시스템 호출 과정
+![image](https://github.com/user-attachments/assets/83248b7a-658c-48e2-b82e-f820545ddee3)
+
+## 시스템 호출 요약
+![image](https://github.com/user-attachments/assets/03447e2e-de51-4775-adce-821b76b51f79)
+
+## 유닉스에서 파일
+- 연속된 바이트의 나열
+- 특별한 다른 포맷을 정하지 않음
+- 디스크 파일뿐만 아니라 외부 장치에 대한 인터페이스
+
+![image](https://github.com/user-attachments/assets/4115ee1d-e5fa-4de4-94dc-f872cb9cffec)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## 파일 시스템 구조 
 ![image](https://github.com/user-attachments/assets/f85d6912-5146-49ed-a3c1-5c7293a31502)
