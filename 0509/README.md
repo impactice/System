@@ -433,13 +433,177 @@ $ cat myfile
 ```
 Hello! LinuxBye! Linux
 
+## 파일 위치 포인터(file position pointer)
+- 파일 위치 포인터는 파일 내에 읽거나 쓸 위치인 현재 파일 위치(current file position)를 가리킨다
+
+![image](https://github.com/user-attachments/assets/5b70e056-6afb-446d-8c8e-67946bd24ef3)
+
+## 파일 위치 포인터 이동: lseek()
+- lseek() 시스템 호출
+  - 임의의 위치로 파일 위치 포인터를 이동시킬 수 있다
+```
+#include <unistd.h>
+off_t lseek (int fd, off_t offset, int whence );
+```
+이동에 성공하면 현재 위치를 리턴하고 실패하면 -1을 리턴한다 
+
+![image](https://github.com/user-attachments/assets/3f19af86-7d91-45ff-af22-d87dd84f0080)
+
+## 파일 위치 포인터 이동: 예 
+- 파일 위치 이동
+  - lseek(fd, 0L, SEEK_SET); 파일 시작으로 이동(rewind)
+  - lseek(fd, 100L, SEEK_SET); 파일 시작에서 100바이트 위치로
+  - lseek(fd, 0L, SEEK_END); 파일 끝으로 이동(append)
+
+- 레코드 단위로 이동
+  - lseek(fd, n * sizeof(record), SEEK_SET); n+1번째 레코드 시작위치로
+  - lseek(fd, sizeof(record), SEEK_CUR); 다음 레코드 시작위치로
+  - lseek(fd, -sizeof(record), SEEK_CUR); 전 레코드 시작위치로 .
+
+- 파일끝 이후로 이동
+  - lseek(fd, sizeof(record), SEEK_END); 파일끝에서 한 레코드 다음 위치로
+
+## 레코드 저장 예
+write(fd, &record1, sizeof(record));
+write(fd, &record2, sizeof(record));
+lseek(fd, sizeof(record), SEEK_END);
+write(fd, &record3, sizeof(record));
+
+![image](https://github.com/user-attachments/assets/c5cb57d4-de4f-491c-b597-9904c0802da7)
+
+## student.h
+```
+#define MAX 24
+#define START_ID 1401001
+struct student {
+  char name[MAX];
+  int id;
+  int score;
+};
+```
+
+## dbcreate.c 
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include "student.h"
+/* 학생 정보를 입력받아 데이터베이스 파일에 저장한다. */
+int main(int argc, char *argv[])
+{
+  int fd;
+  struct student record;
+  if (argc < 2) {
+    fprintf(stderr, "사용법 : %s file\n", argv[0]);
+    exit(1);
+  }
+  if ((fd = open(argv[1], O_WRONLY|O_CREAT|O_EXCL, 0640)) == -1) {
+    perror(argv[1]);
+    exit(2);
+  }
+  printf("%-9s %-8s %-4s\n", "학번", "이름", "점수");
+  while (scanf("%d %s %d", &record.id, record.name, &record.score) == 3) {
+    lseek(fd, (record.id - START_ID) * sizeof(record), SEEK_SET);
+    write(fd, (char *) &record, sizeof(record) );
+  }
+  close(fd);
+  exit(0);
+}
+```
+
+## dbquery.c 
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include "student.h"
+/* 학번을 입력받아 해당 학생의 레코드를 파일에서 읽어 출력한다. */
+int main(int argc, char *argv[])
+{
+  int fd, id;
+  struct student record;
+  if (argc < 2) {
+    fprintf(stderr, "사용법 : %s file\n", argv[0]);
+    exit(1);
+  }
+  if ((fd = open(argv[1], O_RDONLY)) == -1) {
+    perror(argv[1]);
+    exit(2);
+  }
+  do {
+    printf("\n검색할 학생의 학번 입력:");
+    if (scanf("%d", &id) == 1) {
+      lseek(fd, (id-START_ID)*sizeof(record), SEEK_SET);
+      if ((read(fd, (char *) &record, sizeof(record)) > 0) && (record.id != 0))
+        printf("이름:%s\t 학번:%d\t 점수:%d\n", record.name, record.id, record.score);
+      else printf("레코드 %d 없음\n", id);
+    } else printf(“입력 오류”);
+    printf("계속하겠습니까?(Y/N)");
+    scanf(" %c", &c);
+  } while (c=='Y');
+  close(fd);
+  exit(0);
+}
+```
+
+## 레코드 수정 과정
+(1) 파일로부터 해당 레코드를 읽어서
+(2) 이 레코드를 수정한 후에
+(3) 수정된 레코드를 다시 파일 내의 원래 위치에 써야 한다
+
+![image](https://github.com/user-attachments/assets/9d28655e-f136-4334-8853-4f94e47939a6)
 
 
+## dbupdate.c
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include "student.h"
+/* 학번을 입력받아 해당 학생 레코드를 수정한다. */
+int main(int argc, char *argv[])
+{
+  int fd, id;
+  char c;
+  struct student record;
+  if (argc < 2) {
+    fprintf(stderr, "사용법 : %s file\n", argv[0]);
+    exit(1);
+  }
+  if ((fd = open(argv[1], O_RDWR)) == -1) {
+    perror(argv[1]);
+    exit(2);
+  }
+  do {
+    printf("수정할 학생의 학번 입력: ");
+    if (scanf("%d", &id) == 1) {
+      lseek(fd, (long) (id-START_ID)*sizeof(record), SEEK_SET);
+      if ((read(fd, (char *) &record, sizeof(record)) > 0) && (record.id != 0)) {
+        printf("학번:%8d\t 이름:%4s\t 점수:%4d\n", record.id, record.name, record.score);
+        printf("새로운 점수: ");
+        scanf("%d", &record.score);
+        lseek(fd, (long) -sizeof(record), SEEK_CUR);
+        write(fd, (char *) &record, sizeof(record));
+      } else printf("레코드 %d 없음\n", id);
+    } else printf("입력오류\n");
+    printf("계속하겠습니까?(Y/N)");
+    scanf(" %c",&c);
+  } while (c == 'Y');
+  close(fd);
+  exit(0);
+}
+```
 
-
-
-
-
+## 핵심 개념 
+- 시스템 호출은 커널에 서비스를 요청하기 위한 프로그래밍 인터페이스로 응용 프로그램은 시스템 호출을 통해서 커널에 서비스를 요청할 수 있다
+- 파일 디스크립터는 열린 파일을 나타낸다
+- open() 시스템 호출을 파일을 열고 열린 파일의 파일 디스크립터를 반환한다
+- read() 시스템 호출은 지정된 파일에서 원하는 만큼의 데이터를 읽고 write() 시스템 호출은 지정된 파일에 원하는 만큼의 데이터를 쓴다
+- 파일 위치 포인터는 파일 내에 읽거나 쓸 위치인 현재 파일 위치를 가리킨다
+- lseek() 시스템 호출은 지정된 파일의 현재 파일 위치를 원하는 위치로 이동시킨다
 
 ## 파일 시스템 구조 
 ![image](https://github.com/user-attachments/assets/f85d6912-5146-49ed-a3c1-5c7293a31502)
@@ -459,7 +623,82 @@ Hello! LinuxBye! Linux
 - 데이터 블록(Data block)
   - 파일의 내용(데이터)을 저장하기 위한 블록들
 
+## i-노드(i-Node)
+- 한 파일은 하나의 i-노드를 갖는다.
 
+- 파일에 대한 모든 정보를 가지고 있음
+  - 파일 타입: 일반 파일, 디렉터리, 블록 장치, 문자 장치 등
+  - 파일 크기
+  - 사용권한
+  - 파일 소유자 및 그룹
+  - 접근 및 갱신 시간
+  - 데이터 블록에 대한 포인터(주소) 등
+
+## 블록 포인터
+![image](https://github.com/user-attachments/assets/1cc7cef0-76c9-42e0-a564-b4c460ad1a86)
+
+- 데이터 블록에 대한 포인터
+  - 파일의 내용을 저장하기 위해 할당된 데이터 블록의 주소
+
+- 하나의 i-노드 내의 블록 포인터
+  - 직접 블록 포인터 10개
+  - 간접 블록 포인터 1개
+  - 이중 간접 블록 포인터 1개
+
+## 파일 입출력 구현
+- 파일 입출력 구현을 위한 커널 내 자료구조
+  - 파일 디스크립터 배열(Fd array)
+  - 열린 파일 테이블(Open File Table)
+  - 동적 i-노드 테이블(Active i-node table)
+
+## 파일을 위한 커널 자료구조
+- fd = open(“file”, O_RDONLY);
+
+![image](https://github.com/user-attachments/assets/27ca7b1d-8b58-4284-9bd0-6b16b0fd8096)
+
+## 파일 디스크립터 배열(Fd Array)
+- 프로세스 당 하나씩 갖는다
+
+- 파일 디스크립터 배열
+  - 열린 파일 테이블의 엔트리를 가리킨다.
+
+- 파일 디스크립터
+  - 파일 디스크립터 배열의 인덱스
+  - 열린 파일을 나타내는 번호
+
+## 열린 파일 테이블(Open File Table)
+- 파일 테이블 (file table)
+  - 커널 자료구조
+  - 열려진 모든 파일 목록
+  - 열려진 파일  파일 테이블의 항목
+
+- 파일 테이블 항목 (file table entry)
+  - 파일 상태 플래그 (read, write, append, sync, nonblocking,…)
+  - 파일의 현재 위치 (current file offset)
+  - i-node에 대한 포인터
+
+## 동적 i-노드 테이블(Active i-node Table)
+- 동적 i-노드 테이블
+  - 커널 내의 자료 구조
+  - Open 된 파일들의 i-node를 저장하는 테이블
+
+- i-노드
+  - 하드 디스크에 저장되어 있는 파일에 대한 자료구조
+  - 한 파일에 하나의 i-node
+  - 하나의 파일에 대한 정보 저장
+    - 소유자, 크기
+    - 파일이 위치한 장치
+    - 파일 내용 디스크 블럭에 대한 포인터
+
+- i-node table vs. i-node
+
+## 파일을 위한 커널 자료구조
+- fd = open(“file”, O_RDONLY); //두 번 open
+
+![image](https://github.com/user-attachments/assets/bfe69dba-bd37-405f-aa94-b12d6376d3d8)
+
+- fd = dup(3); 혹은 fd = dup2(3,4);
+![image](https://github.com/user-attachments/assets/8950c135-af89-4ef5-a34d-a40c19918a50)
 
 
 
