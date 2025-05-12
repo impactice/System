@@ -700,5 +700,54 @@ int main(int argc, char *argv[])
 - fd = dup(3); 혹은 fd = dup2(3,4);
 ![image](https://github.com/user-attachments/assets/8950c135-af89-4ef5-a34d-a40c19918a50)
 
+## 파일 상태(file status)
+- 파일 상태
+  - 파일에 대한 모든 정보
+  - 블록수, 파일 타입, 사용 권한, 링크수, 파일 소유자의 사용자 ID,
+  - 그룹 ID, 파일 크기, 최종 수정 시간 등
+
+- 예
+![image](https://github.com/user-attachments/assets/96c687f1-2b1a-4ff1-8326-58a049277b81)
+
+## 상태 정보 : stat()
+- 파일 하나당 하나의 i-노드가 있으며 i-노드 내에 파일에 대한 모든 상태 정보가 저장되어 있다
+
+```
+#include <sys/types.h>
+#include <sys/stat.h>
+int stat (const char *filename, struct stat *buf);
+int fstat (int fd, struct stat *buf);
+int lstat (const char *filename, struct stat *buf);
+```
+파일의 상태 정보를 가져와서 stat 구조체 buf에 저장한다 성공하면 0, 실패하면 -1을 리턴한다
+
+## stat 구조체 
+```
+struct stat {
+mode_t st_mode; // 파일 타입과 사용권한
+ino_t st_ino; // i-노드 번호
+dev_t st_dev; // 장치 번호
+dev_t st_rdev; // 특수 파일 장치 번호
+nlink_t st_nlink; // 링크 수
+uid_t st_uid; // 소유자의 사용자 ID
+gid_t st_gid; // 소유자의 그룹 ID
+off_t st_size; // 파일 크기
+time_t st_atime; // 최종 접근 시간
+time_t st_mtime; // 최종 수정 시간
+time_t st_ctime; // 최종 상태 변경 시간
+long st_blksize; // 최적 블록 크기
+long st_blocks; // 파일의 블록 수
+};
+```
+
+## 파일 타입 
+|파일 타입| 설명|
+|일반 파일| 데이터를 갖고 있는 텍스트 파일 또는 이진 화일|
+|디렉터리 파일| 파일의 이름들과 파일 정보에 대한 포인터를 포함하는 파일|
+|문자 장치 파일| 문자 단위로 데이터를 전송하는 장치를 나타내는 파일|
+|블록 장치 파일| 블록 단위로 데이터를 전송하는 장치를 나타내는 파일|
+|FIFO 파일| 프로세스 간 통신에 사용되는 파일로 이름 있는 파이프|
+|소켓| 네트워크를 통한 프로세스 간 통신에 사용되는 파일|
+|심볼릭 링크| 다른 파일을 가리키는 포인터 역할을 하는 파일|
 
 
