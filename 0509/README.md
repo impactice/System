@@ -741,13 +741,286 @@ long st_blocks; // 파일의 블록 수
 ```
 
 ## 파일 타입 
-|파일 타입| 설명|
-|일반 파일| 데이터를 갖고 있는 텍스트 파일 또는 이진 화일|
-|디렉터리 파일| 파일의 이름들과 파일 정보에 대한 포인터를 포함하는 파일|
-|문자 장치 파일| 문자 단위로 데이터를 전송하는 장치를 나타내는 파일|
-|블록 장치 파일| 블록 단위로 데이터를 전송하는 장치를 나타내는 파일|
-|FIFO 파일| 프로세스 간 통신에 사용되는 파일로 이름 있는 파이프|
-|소켓| 네트워크를 통한 프로세스 간 통신에 사용되는 파일|
-|심볼릭 링크| 다른 파일을 가리키는 포인터 역할을 하는 파일|
+![image](https://github.com/user-attachments/assets/bccc9eac-8851-488c-a6a8-8cb773731339)
+
+## 파일 타입 검사 함수
+- 파일 타입을 검사하기 위한 매크로 함수 
+![image](https://github.com/user-attachments/assets/15fb1ed7-2f3b-4705-9910-5163bb190a16)
+
+## ftype.c 
+```
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+/* 파일 타입을 검사한다. */
+int main(int argc, char *argv[])
+{
+  int i;
+  struct stat buf;
+  for (i = 1; i < argc; i++) {
+    printf("%s: ", argv[i]);
+    if (lstat(argv[i], &buf) < 0) {
+      perror("lstat()");
+      continue;
+    }
+    if (S_ISREG(buf.st_mode))
+      printf("%s \n", "일반 파일");
+    if (S_ISDIR(buf.st_mode))
+      printf("%s \n", "디렉터리");
+    if (S_ISCHR(buf.st_mode))
+      printf("%s \n", "문자 장치 파일");
+    if (S_ISBLK(buf.st_mode))
+      printf("%s \n", "블록 장치 파일");
+    if (S_ISFIFO(buf.st_mode))
+      printf("%s \n", "FIFO 파일");
+    if (S_ISLNK(buf.st_mode))
+      printf("%s \n", "심볼릭 링크");
+    if (S_ISSOCK(buf.st_mode))
+      printf("%s \n", "소켓");
+  }
+  exit(0);
+}
+```
+
+## 파일 사용 권한(File permissions) 
+- 각 파일에 대한 권한 관리
+  - 각 파일마다 사용권한이 있다
+  - 소유자(owner)/그룹(group)/기타(others)로 구분해서 관리한다  
+
+- 파일에 대한 권한
+  - 읽기 r
+  - 쓰기 w
+  - 실행 x
+
+## 사용권한 
+- read 권한이 있어야
+  - O_RDONLY O_RDWR 을 사용하여 파일을 열 수 있다
+
+- write 권한이 있어야
+  - O_WRONLY O_RDWR O_TRUNC 을 사용하여 파일을 열 수 있다
+
+- 디렉토리에 write 권한과 execute 권한이 있어야
+  - 그 디렉토리에 파일을 생성할 수 있고
+  - 그 디렉토리의 파일을 삭제할 수 있다
+  - 삭제할 때 그 파일에 대한 read write 권한은 없어도 됨
+
+## 파일 사용 권한 
+- 파일 사용권한(file access permission)
+- stat 구조체의 st_mode 의 값
+
+![image](https://github.com/user-attachments/assets/622a2a68-43ed-4e4d-87ab-17096939b2d2)
+
+![image](https://github.com/user-attachments/assets/be93337a-6100-4ede-aec9-3a402e58982b)
+
+## chmod(), fchmod() 
+```
+#include <sys/stat.h>
+#include <sys/types.h>
+int chmod (const char *path, mode_t mode );
+int fchmod (int fd, mode_t mode );
+```
+
+- 파일의 사용 권한(access permission)을 변경한다
+
+- 리턴 값
+  - 성공하면 0, 실패하면 -1
+
+- mode : bitwise OR
+  - S_ISUID, S_ISGID
+  - S_IRUSR, S_IWUSR, S_IXUSR
+  - S_IRGRP, S_IWGRP, S_IXGRP
+  - S_IROTH, S_IWOTH, S_IXOTH
+
+## fchmod.c 
+```
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <stdio.h>
+#include <stdlib.h>
+/* 파일 사용권한을 변경한다. */
+main(int argc, char *argv[])
+{
+  long strtol( );
+  int newmode;
+  newmode = (int) strtol(argv[1], (char **) NULL, 8);
+  if (chmod(argv[2], newmode) == -1) {
+    perror(argv[2]);
+    exit(1);
+  }
+  exit(0);
+}
+```
+
+## chown()
+```
+#include <sys/types.h>
+#include <unistd.h>
+int chown (const char *path, uid_t owner, gid_t group );
+int fchown (int filedes, uid_t owner, gid_t group );
+int lchown (const char *path, uid_t owner, gid_t group );
+```
+- 파일의 user ID와 group ID를 변경한다
+
+- 리턴
+  - 성공하면 0, 실패하면 -1
+- lchown()은 심볼릭 링크 자체를 변경한다
+- super-user만 변환 가능
+
+## utime()
+```
+#include <sys/types.h>
+#include <utime.h>
+int utime (const char *filename, const struct utimbuf *times );
+```
+- 파일의 최종 접근 시간과 최종 변경 시간을 조정한다
+- times가 NULL 이면, 현재시간으로 설정된다.
+- 리턴 값
+  - 성공하면 0, 실패하면 -1
+- UNIX 명령어 touch 참고
+
+## utime()
+```
+struct utimbuf {
+time_t actime; /* access time */
+time_t modtime; /* modification time */
+}
+```
+- 각 필드는 1970-1-1 00:00 부터 현재까지의 경과 시간을 초로 환산한 값
+
+## cptime.c
+```
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <utime.h>
+#include <stdio.h>
+#include <stdlib.h>
+int main(int argc, char *argv[])
+{
+  struct stat buf; // 파일 상태 저장을 위한 변수
+  struct utimbuf time;
+  if (argc < 3) {
+    fprintf(stderr, "사용법: cptime file1 file2\n");
+    exit(1);
+  }
+  if (stat(argv[1], &buf) <0) { // 상태 가져오기
+    perror("stat()");
+    exit(-1);
+  }
+  time.actime = buf.st_atime;
+  time.modtime = buf.st_mtime;
+  if (utime(argv[2], &time)) // 접근, 수정 시간 복사
+    perror("utime");
+  else exit(0);
+}
+```
+
+## 디렉토리 구현
+- 디렉터리 내에는 무엇이 저장되어 있을까?
+- 디렉터리 엔트리
+```
+#include <dirent.h>
+struct dirent {
+  ino_t d_ino; // i-노드 번호
+  char d_name[NAME_MAX + 1];
+  // 파일 이름
+}
+```
+![image](https://github.com/user-attachments/assets/19379240-ffa1-4e85-b738-a6e77518d60a)
+
+## 디렉토리 리스트 
+- opendir()
+  - 디렉터리 열기 함수
+  - DIR 포인터(열린 디렉터리를 가리키는 포인터) 리턴
+
+- readdir()
+  - 디렉터리 읽기 함수
+```
+#include <sys/types.h>
+#include <dirent.h>
+DIR *opendir (const char *path);
+```
+path 디렉터리를 열고 성공하면 DIR 구조체 포인터를, 실패하면 NULL을 리턴
+
+```
+struct dirent *readdir(DIR *dp);
+```
+한 번에 디렉터리 엔트리를 하나씩 읽어서 리턴한다
+
+## list1.c
+```
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+/* 디렉터리 내의 파일 이름들을 리스트한다. */
+int main(int argc, char **argv)
+{
+DIR *dp;
+char *dir;
+struct dirent *d;
+struct stat st;
+char path[BUFSIZ+1];
+  if (argc == 1)
+    dir = "."; // 현재 디렉터리를 대상으로
+  else dir = argv[1];
+
+  if ((dp = opendir(dir)) == NULL) // 디렉터리 열기
+    perror(dir);
+
+  while ((d = readdir(dp)) != NULL) // 각 디렉터리 엔트리에 대해
+    printf("%s \n", d->d_name); // 파일 이름 프린트
+
+  closedir(dp);
+  exit(0);
+}
+```
+
+## 파일 이름/크기 출력
+- 디렉터리 내에 있는 파일 이름과 그 파일의 크기(블록의 수)를 출력하도록 확장
+```
+while ((d = readdir(dp)) != NULL) { //디렉터리 내의 각 파일
+  sprintf(path, "%s/%s", dir, d->d_name); // 파일경로명 만들기
+  if (lstat(path, &st) < 0) // 파일 상태 정보 가져오기
+    perror(path);
+  printf("%5d %s", st->st_blocks, d->name); // 블록 수, 파일 이름 출력
+  putchar('\n');
+}
+```
+
+## st_mode
+- lstat() 시스템 호출
+  - 파일 타입과 사용권한 정보는 st->st_mode 필드에 함께 저장됨
+
+- st_mode 필드
+  - 4비트: 파일 타입
+  - 3비트: 특수용도
+  - 9비트: 사용권한
+    - 3비트: 파일 소유자의 사용권한
+    - 3비트: 그룹의 사용권한
+    - 3비트: 기타 사용자의 사용권한
+
+![image](https://github.com/user-attachments/assets/d7860815-faae-48cc-a6e7-4c4d2c00e938)
+
+## 디렉토리 리스트 : 예 
+- list2.c
+  - ls –l 명령어처럼 파일의 모든 상태 정보를 프린트
+
+- 프로그램 구성
+  - main() 메인 프로그램
+  - printStat() 파일 상태 정보 프린트
+  - type() 파일 타입 리턴
+  - perm() 파일 사용권한 리턴
+
+
+
+
+
+
+
 
 
