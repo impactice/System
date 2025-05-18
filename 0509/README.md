@@ -605,6 +605,8 @@ int main(int argc, char *argv[])
 - 파일 위치 포인터는 파일 내에 읽거나 쓸 위치인 현재 파일 위치를 가리킨다
 - lseek() 시스템 호출은 지정된 파일의 현재 파일 위치를 원하는 위치로 이동시킨다
 
+# 파일 시스템 구현현
+
 ## 파일 시스템 구조 
 ![image](https://github.com/user-attachments/assets/f85d6912-5146-49ed-a3c1-5c7293a31502)
 
