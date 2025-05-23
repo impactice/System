@@ -168,6 +168,163 @@ pid_t waitpid(pid_t pid, int *statloc, int options);
 
 ![image](https://github.com/user-attachments/assets/7179e70b-3551-4680-b4af-ab64e7ba67e3)
 
+## 프로세스 기다리기: forkwait.c 
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
+int main(void)
+{
+    pid_t pid, child;
+    int status;
+
+    printf("[%d] 부모 프로세스 시작\n", getpid());
+
+    // 자식 프로세스 생성
+    pid = fork();
+    if (pid < 0) {
+        perror("fork 실패");
+        exit(EXIT_FAILURE);
+    }
+    if (pid == 0) {
+        // 자식 프로세스 코드 실행
+        printf("[%d] 자식 프로세스 시작\n", getpid());
+        exit(1);
+    }
+
+    // 부모 프로세스: 자식의 종료를 기다림
+    child = wait(&status);
+    if (child == -1) {
+        perror("wait 실패");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("[%d] 자식 프로세스 %d 종료\n", getpid(), child);
+    printf("\t종료 코드 %d\n", status >> 8);  // 또는 WEXITSTATUS(status) 사용 가능
+
+    return EXIT_SUCCESS;
+}
+```
+
+```
+gcc -o forkwait forkwait.c
+```
+
+```
+./forkwait
+```
+```
+[15943] 부모 프로세스 시작
+[15944] 자식 프로세스 시작
+[15943] 자식 프로세스 15944 종료
+종료코드 1
+```
+
+## 특정 자식 프로세스 기다리기: waitpid.c 
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
+int main(void) {
+    int pid1, pid2, child, status;
+
+    printf("[%d] 부모 프로세스 시작\n", getpid());
+
+    /* 첫 번째 자식 프로세스 생성 */
+    pid1 = fork();
+    if (pid1 < 0) {
+        perror("fork 오류");
+        exit(EXIT_FAILURE);
+    }
+    if (pid1 == 0) {
+        printf("[%d] 자식 프로세스[1] 시작\n", getpid());
+        sleep(1);
+        printf("[%d] 자식 프로세스[1] 종료\n", getpid());
+        exit(1);
+    }
+    
+    /* 두 번째 자식 프로세스 생성 */
+    pid2 = fork();
+    if (pid2 < 0) {
+        perror("fork 오류");
+        exit(EXIT_FAILURE);
+    }
+    if (pid2 == 0) {
+        printf("[%d] 자식 프로세스 #2 시작\n", getpid());
+        sleep(2);
+        printf("[%d] 자식 프로세스 #2 종료\n", getpid());
+        exit(2);
+    }
+
+    /* 자식 프로세스 [1]의 종료를 기다림 */
+    child = waitpid(pid1, &status, 0);
+    if (child < 0) {
+        perror("waitpid 오류");
+        exit(EXIT_FAILURE);
+    }
+    printf("[%d] 자식 프로세스 #1 (%d) 종료\n", getpid(), child);
+    printf("\t종료 코드: %d\n", status >> 8);
+
+    return EXIT_SUCCESS;
+}
+```
+
+```
+gcc -o waitpid waitpid.c
+```
+```
+./waitpid
+```
+```
+[16840] 부모 프로세스 시작
+[16841] 자식 프로세스[1] 시작
+[16842] 자식 프로세스[2] 시작
+[16841] 자식 프로세스[1] 종료
+[16840] 자식 프로세스[1] 16841 종료
+종료코드 1
+[16842] 자식 프로세스[2] 종료
+```
+
+## 프로그램 실행 
+- fork() 후
+  - 자식 프로세스는 부모 프로세스와 똑같은 코드 실행
+
+- 자식 프로세스에게 새 프로그램 실행
+  - exec() 시스템 호출 사용
+  - 프로세스 내의 프로그램을 새 프로그램으로 대치
+
+- 보통 fork() 후에 exec( ) 
+
+![image](https://github.com/user-attachments/assets/a275605c-3540-4fa2-89b8-966111490275)
+
+## 프로그램 실행: exec() 
+- 프로세스가 exec() 호출을 하면,
+ 그 프로세스 내의 프로그램은 완전히 새로운 프로그램으로 대치
+ 자기대치(自己代置)
+ 새 프로그램의 main()부터 실행이 시작된다
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
