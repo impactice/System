@@ -61,8 +61,52 @@ gcc -o fork1 fork1.c
 ## 부모 프로세스와 자식 프로세스 구분 
 - fork() 호출 후에 리턴값이 다르므로 이 리턴값을 이용하여 부모 프로세스와 자식 프로세스를 구별하고 서로 다른 일을 하도록 할 수 있다
 
+```
+pid = fork();
+if ( pid == 0 )
+{ 자식 프로세스의 실행 코드 }
+else
+{ 부모 프로세스의 실행 코드 }
+```
 
+## fork2.c
+```
+#include <stdio.h>
+#include <unistd.h>
 
+/* 자식 프로세스를 생성하는 프로그램 */
+int main() {
+    int pid;
+
+    // 현재 프로세스 ID 출력
+    printf("[%d] 프로세스 시작\n", getpid());
+
+    // 새로운 프로세스 생성
+    pid = fork();
+
+    // 부모 및 자식 프로세스에서 출력
+    printf("[%d] 프로세스 : fork() 반환값 %d\n", getpid(), pid);
+
+    return 0;
+}
+```
+
+```
+gcc -o fork2 fork2.c
+```
+```
+./fork2
+```
+
+```
+[Parent] Hello, world! pid=15799
+[Child] Hello, world! pid=15800
+```
+
+## 두 개의 자식 프로세스 생성: fork3.c 
+```
+
+```
 
 
 
