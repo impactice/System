@@ -142,6 +142,35 @@ int main() {
 }
 ```
 
+```
+gcc -o fork3 fork3.c
+```
+
+```
+./fork3
+```
+
+```
+[Parent] Hello, world! pid=15740
+[Child 1] Hello, world! pid=15741
+[Child 2] Hello, world! pid=15742
+```
+
+## 프로세스 기다리기: wait() 
+- 자식 프로세스 중의 하나가 끝날 때까지 기다린다.
+- 끝난 자식 프로세스의 종료 코드가 status에 저장되며 끝난 자식 프로세스의 번호를 리턴한다
+```
+#include <sys/types.h>
+#include <sys/wait.h>
+pid_t wait(int *status);
+pid_t waitpid(pid_t pid, int *statloc, int options);
+```
+
+![image](https://github.com/user-attachments/assets/7179e70b-3551-4680-b4af-ab64e7ba67e3)
+
+
+
+
 
 
 
