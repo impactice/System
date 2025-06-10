@@ -519,7 +519,7 @@ char *get_current_directory(void) {
 }
 ```
 
-## ls+cd 통합
+### ls+cd 통합
 ```
 #include <stdio.h>
 #include <stdlib.h>
@@ -1257,7 +1257,7 @@ char *resolve_absolute_path(const char *path) {
 }
 ```
 
-## 통합 ls+cd+pwd
+### 통합 ls+cd+pwd
 ```
 #include <stdio.h>
 #include <stdlib.h>
