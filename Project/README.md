@@ -3713,5 +3713,815 @@ int main(int argc, char *argv[]) {
 // echo "Hello World" | ./cat -n     # 파이프를 통한 입력
 ```
 
+## more / less: 파일 내용을 페이지 단위로 출력 (스크롤 가능) 
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <termios.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <signal.h>
+
+#define MAX_LINE_LENGTH 1024
+#define DEFAULT_LINES 24
+#define DEFAULT_COLS 80
+
+typedef struct {
+    int lines;          // 터미널 높이
+    int cols;           // 터미널 너비
+    int current_line;   // 현재 줄 번호
+    int total_lines;    // 전체 줄 수
+    char **content;     // 파일 내용 저장
+    char *filename;     // 현재 파일명
+} more_state;
+
+// 전역 변수
+static struct termios original_termios;
+static int termios_saved = 0;
+
+// 함수 선언
+void setup_terminal(void);
+void restore_terminal(void);
+void get_terminal_size(int *rows, int *cols);
+int load_file_content(const char *filename, more_state *state);
+void display_page(more_state *state);
+void display_status(more_state *state);
+int handle_input(more_state *state);
+void free_content(more_state *state);
+void print_usage(void);
+void signal_handler(int sig);
+char get_char(void);
+
+// 신호 핸들러
+void signal_handler(int sig) {
+    restore_terminal();
+    exit(0);
+}
+
+// 사용법 출력
+void print_usage(void) {
+    printf("Usage: more [file...]\n");
+    printf("View file contents page by page.\n\n");
+    printf("Commands while viewing:\n");
+    printf("  SPACE     Display next page\n");
+    printf("  ENTER     Display next line\n");
+    printf("  q         Quit\n");
+    printf("  h         Show this help\n");
+    printf("  b         Go back one page\n");
+    printf("  f         Go forward one page\n");
+    printf("  /pattern  Search for pattern\n");
+    printf("  n         Find next occurrence\n");
+    printf("  g         Go to beginning\n");
+    printf("  G         Go to end\n");
+}
+
+// 터미널 설정
+void setup_terminal(void) {
+    struct termios new_termios;
+    
+    // 현재 터미널 설정 저장
+    if (tcgetattr(STDIN_FILENO, &original_termios) == 0) {
+        termios_saved = 1;
+        
+        // 새로운 설정 복사
+        new_termios = original_termios;
+        
+        // canonical 모드 비활성화, echo 비활성화
+        new_termios.c_lflag &= ~(ICANON | ECHO);
+        new_termios.c_cc[VMIN] = 1;
+        new_termios.c_cc[VTIME] = 0;
+        
+        tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
+    }
+    
+    // 신호 핸들러 설정
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+}
+
+// 터미널 복원
+void restore_terminal(void) {
+    if (termios_saved) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &original_termios);
+        termios_saved = 0;
+    }
+}
+
+// 터미널 크기 얻기
+void get_terminal_size(int *rows, int *cols) {
+    struct winsize ws;
+    
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0) {
+        *rows = ws.ws_row;
+        *cols = ws.ws_col;
+    } else {
+        *rows = DEFAULT_LINES;
+        *cols = DEFAULT_COLS;
+    }
+    
+    // 상태 표시를 위해 한 줄 빼기
+    if (*rows > 1) {
+        (*rows)--;
+    }
+}
+
+// 문자 하나 읽기 (non-blocking)
+char get_char(void) {
+    char ch;
+    if (read(STDIN_FILENO, &ch, 1) == 1) {
+        return ch;
+    }
+    return 0;
+}
+
+// 파일 내용 로드
+int load_file_content(const char *filename, more_state *state) {
+    FILE *file;
+    char line[MAX_LINE_LENGTH];
+    int capacity = 1000;  // 초기 용량
+    int line_count = 0;
+    
+    // 파일명이 "-"이면 표준 입력
+    if (strcmp(filename, "-") == 0) {
+        file = stdin;
+        state->filename = "stdin";
+    } else {
+        file = fopen(filename, "r");
+        if (file == NULL) {
+            fprintf(stderr, "more: %s: %s\n", filename, strerror(errno));
+            return -1;
+        }
+        state->filename = strdup(filename);
+    }
+    
+    // 파일이 디렉토리인지 확인
+    if (file != stdin) {
+        struct stat st;
+        if (fstat(fileno(file), &st) == 0 && S_ISDIR(st.st_mode)) {
+            fprintf(stderr, "more: %s: Is a directory\n", filename);
+            fclose(file);
+            return -1;
+        }
+    }
+    
+    // 메모리 할당
+    state->content = malloc(capacity * sizeof(char*));
+    if (state->content == NULL) {
+        fprintf(stderr, "more: Memory allocation failed\n");
+        if (file != stdin) fclose(file);
+        return -1;
+    }
+    
+    // 파일 내용 읽기
+    while (fgets(line, sizeof(line), file) != NULL) {
+        // 용량 확장 필요시
+        if (line_count >= capacity) {
+            capacity *= 2;
+            char **new_content = realloc(state->content, capacity * sizeof(char*));
+            if (new_content == NULL) {
+                fprintf(stderr, "more: Memory allocation failed\n");
+                free_content(state);
+                if (file != stdin) fclose(file);
+                return -1;
+            }
+            state->content = new_content;
+        }
+        
+        // 줄 복사 (개행 문자 제거)
+        int len = strlen(line);
+        if (len > 0 && line[len-1] == '\n') {
+            line[len-1] = '\0';
+        }
+        
+        state->content[line_count] = strdup(line);
+        if (state->content[line_count] == NULL) {
+            fprintf(stderr, "more: Memory allocation failed\n");
+            free_content(state);
+            if (file != stdin) fclose(file);
+            return -1;
+        }
+        line_count++;
+    }
+    
+    if (file != stdin) {
+        fclose(file);
+    }
+    
+    state->total_lines = line_count;
+    state->current_line = 0;
+    
+    return 0;
+}
+
+// 메모리 해제
+void free_content(more_state *state) {
+    if (state->content != NULL) {
+        for (int i = 0; i < state->total_lines; i++) {
+            if (state->content[i] != NULL) {
+                free(state->content[i]);
+            }
+        }
+        free(state->content);
+        state->content = NULL;
+    }
+    
+    if (state->filename != NULL && strcmp(state->filename, "stdin") != 0) {
+        free(state->filename);
+        state->filename = NULL;
+    }
+}
+
+// 페이지 표시
+void display_page(more_state *state) {
+    // 화면 지우기
+    printf("\033[2J\033[H");
+    
+    // 현재 페이지의 줄들 출력
+    int lines_displayed = 0;
+    int line = state->current_line;
+    
+    while (line < state->total_lines && lines_displayed < state->lines) {
+        // 긴 줄 처리 (터미널 너비에 맞춰 잘라서 표시)
+        char *content = state->content[line];
+        int len = strlen(content);
+        int pos = 0;
+        
+        while (pos < len && lines_displayed < state->lines) {
+            int chars_to_print = (len - pos > state->cols) ? state->cols : (len - pos);
+            printf("%.*s", chars_to_print, content + pos);
+            
+            if (chars_to_print == state->cols && pos + chars_to_print < len) {
+                // 줄이 잘렸으면 다음 줄로
+                printf("\n");
+                lines_displayed++;
+            } else {
+                printf("\n");
+                lines_displayed++;
+                break;
+            }
+            pos += chars_to_print;
+        }
+        line++;
+    }
+    
+    // 남은 공간 채우기
+    while (lines_displayed < state->lines) {
+        printf("\n");
+        lines_displayed++;
+    }
+}
+
+// 상태 표시
+void display_status(more_state *state) {
+    int percent = (state->total_lines == 0) ? 100 : 
+                  (state->current_line * 100) / state->total_lines;
+    
+    printf("\033[7m"); // 역상 표시
+    if (state->current_line + state->lines >= state->total_lines) {
+        printf("--More-- (END) ");
+    } else {
+        printf("--More-- (%d%%) ", percent);
+    }
+    
+    if (state->filename && strcmp(state->filename, "stdin") != 0) {
+        printf("%s", state->filename);
+    }
+    
+    printf("\033[0m"); // 정상 표시로 복원
+    fflush(stdout);
+}
+
+// 입력 처리
+int handle_input(more_state *state) {
+    char ch;
+    static char search_pattern[256] = "";
+    
+    display_status(state);
+    ch = get_char();
+    
+    // 상태 줄 지우기
+    printf("\r\033[K");
+    
+    switch (ch) {
+        case ' ':  // 다음 페이지
+        case 'f':
+            if (state->current_line + state->lines < state->total_lines) {
+                state->current_line += state->lines;
+            }
+            break;
+            
+        case '\n':  // 다음 줄
+        case '\r':
+            if (state->current_line < state->total_lines - 1) {
+                state->current_line++;
+            }
+            break;
+            
+        case 'b':  // 이전 페이지
+            state->current_line -= state->lines;
+            if (state->current_line < 0) {
+                state->current_line = 0;
+            }
+            break;
+            
+        case 'g':  // 처음으로
+            state->current_line = 0;
+            break;
+            
+        case 'G':  // 끝으로
+            state->current_line = state->total_lines - state->lines;
+            if (state->current_line < 0) {
+                state->current_line = 0;
+            }
+            break;
+            
+        case 'h':  // 도움말
+            printf("\n");
+            printf("Commands:\n");
+            printf("  SPACE, f  - Next page\n");
+            printf("  ENTER     - Next line\n");
+            printf("  b         - Previous page\n");
+            printf("  g         - Go to beginning\n");
+            printf("  G         - Go to end\n");
+            printf("  q         - Quit\n");
+            printf("  h         - This help\n");
+            printf("\nPress any key to continue...");
+            get_char();
+            break;
+            
+        case 'q':  // 종료
+        case 'Q':
+            return 1;
+            
+        case '\033':  // ESC 키 (종료)
+            return 1;
+            
+        default:
+            break;
+    }
+    
+    return 0;  // 계속
+}
+
+int main(int argc, char *argv[]) {
+    more_state state = {0};
+    int result = 0;
+    
+    // 도움말 출력
+    if (argc > 1 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)) {
+        print_usage();
+        return 0;
+    }
+    
+    // 터미널 크기 얻기
+    get_terminal_size(&state.lines, &state.cols);
+    
+    // 터미널 설정
+    setup_terminal();
+    
+    // 파일이 지정되지 않으면 표준 입력 사용
+    if (argc < 2) {
+        if (load_file_content("-", &state) == 0) {
+            // 메인 루프
+            while (1) {
+                display_page(&state);
+                
+                // 파일 끝에 도달했으면 종료
+                if (state.current_line + state.lines >= state.total_lines) {
+                    display_status(&state);
+                    printf(" (END - Press q to quit)");
+                    if (get_char() == 'q') break;
+                    printf("\r\033[K");
+                    continue;
+                }
+                
+                if (handle_input(&state)) {
+                    break;  // 종료
+                }
+            }
+        } else {
+            result = 1;
+        }
+        free_content(&state);
+    } else {
+        // 여러 파일 처리
+        for (int i = 1; i < argc; i++) {
+            if (load_file_content(argv[i], &state) == 0) {
+                // 파일이 여러 개면 파일명 표시
+                if (argc > 2) {
+                    printf("\n::::::::::::::\n");
+                    printf("%s\n", argv[i]);
+                    printf("::::::::::::::\n");
+                }
+                
+                // 메인 루프
+                while (1) {
+                    display_page(&state);
+                    
+                    // 파일 끝에 도달했으면 다음 파일로
+                    if (state.current_line + state.lines >= state.total_lines) {
+                        if (i < argc - 1) {
+                            display_status(&state);
+                            printf(" (Next file: %s - Press SPACE or q to quit)", 
+                                   i + 1 < argc ? argv[i + 1] : "");
+                            char ch = get_char();
+                            printf("\r\033[K");
+                            if (ch == 'q') {
+                                i = argc;  // 모든 파일 처리 중단
+                                break;
+                            }
+                            break;  // 다음 파일로
+                        } else {
+                            display_status(&state);
+                            printf(" (END - Press q to quit)");
+                            get_char();
+                            break;
+                        }
+                    }
+                    
+                    if (handle_input(&state)) {
+                        i = argc;  // 모든 파일 처리 중단
+                        break;
+                    }
+                }
+            } else {
+                result = 1;
+            }
+            free_content(&state);
+        }
+    }
+    
+    // 터미널 복원
+    restore_terminal();
+    
+    // 화면 지우기
+    printf("\033[2J\033[H");
+    
+    return result;
+}
+
+// 컴파일 방법:
+// gcc -o more more.c
+//
+// 사용 예시:
+// ./more file.txt                   # 파일을 페이지 단위로 보기
+// ./more file1.txt file2.txt        # 여러 파일 보기
+// cat large_file.txt | ./more       # 표준 입력에서 읽기
+// ./more < input.txt                # 리다이렉션으로 읽기
+```
+
+## head: 파일의 처음 N줄 출력 (기본 10줄)
+- -n NUM: 처음 NUM줄 출력
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <ctype.h>
+
+#define DEFAULT_LINES 10
+#define MAX_LINE_LENGTH 4096
+
+typedef struct {
+    int num_lines;      // 출력할 줄 수
+    int quiet;          // -q 옵션: 파일명 헤더 출력 안함
+    int verbose;        // -v 옵션: 항상 파일명 헤더 출력
+} head_options;
+
+// 함수 선언
+int head_file(const char *filename, head_options *opts);
+int head_stdin(head_options *opts);
+void print_usage(void);
+int parse_number(const char *str);
+
+// 사용법 출력
+void print_usage(void) {
+    printf("Usage: head [OPTION]... [FILE]...\n");
+    printf("Print the first 10 lines of each FILE to standard output.\n");
+    printf("With more than one FILE, precede each with a header giving the file name.\n");
+    printf("With no FILE, or when FILE is -, read standard input.\n\n");
+    printf("  -n, --lines=NUM      print the first NUM lines instead of the first 10;\n");
+    printf("                       with the leading '-', print all but the last NUM lines\n");
+    printf("  -q, --quiet, --silent never print headers giving file names\n");
+    printf("  -v, --verbose        always print headers giving file names\n");
+    printf("      --help           display this help and exit\n");
+    printf("\nNUM may have a multiplier suffix:\n");
+    printf("b 512, kB 1000, K 1024, MB 1000*1000, M 1024*1024,\n");
+    printf("GB 1000*1000*1000, G 1024*1024*1024, and so on for T, P, E, Z, Y.\n");
+    printf("\nExamples:\n");
+    printf("  head -n 5 file.txt    Output first 5 lines of file.txt\n");
+    printf("  head -20 file.txt     Output first 20 lines of file.txt\n");
+    printf("  head file1 file2      Output first 10 lines of each file\n");
+}
+
+// 숫자 파싱 함수 (multiplier suffix 지원)
+int parse_number(const char *str) {
+    char *endptr;
+    long num = strtol(str, &endptr, 10);
+    
+    if (num < 0) {
+        fprintf(stderr, "head: invalid number of lines: '%s'\n", str);
+        return -1;
+    }
+    
+    if (num == 0 && endptr == str) {
+        fprintf(stderr, "head: invalid number of lines: '%s'\n", str);
+        return -1;
+    }
+    
+    // multiplier suffix 처리
+    if (*endptr != '\0') {
+        switch (*endptr) {
+            case 'b':
+                num *= 512;
+                break;
+            case 'k':
+                if (*(endptr + 1) == 'B') {
+                    num *= 1000;
+                } else {
+                    num *= 1024;
+                }
+                break;
+            case 'K':
+                num *= 1024;
+                break;
+            case 'M':
+                if (*(endptr + 1) == 'B') {
+                    num *= 1000000;
+                } else {
+                    num *= 1024 * 1024;
+                }
+                break;
+            case 'G':
+                if (*(endptr + 1) == 'B') {
+                    num *= 1000000000;
+                } else {
+                    num *= 1024 * 1024 * 1024;
+                }
+                break;
+            default:
+                fprintf(stderr, "head: invalid suffix in number of lines: '%s'\n", str);
+                return -1;
+        }
+    }
+    
+    if (num > INT_MAX) {
+        fprintf(stderr, "head: number of lines too large: '%s'\n", str);
+        return -1;
+    }
+    
+    return (int)num;
+}
+
+// 표준 입력에서 읽어서 head 처리
+int head_stdin(head_options *opts) {
+    char line[MAX_LINE_LENGTH];
+    int line_count = 0;
+    
+    while (line_count < opts->num_lines && fgets(line, sizeof(line), stdin) != NULL) {
+        printf("%s", line);
+        line_count++;
+    }
+    
+    return 0;
+}
+
+// 파일에서 head 처리
+int head_file(const char *filename, head_options *opts) {
+    FILE *file;
+    char line[MAX_LINE_LENGTH];
+    int line_count = 0;
+    
+    // 파일명이 "-"이면 표준 입력 사용
+    if (strcmp(filename, "-") == 0) {
+        return head_stdin(opts);
+    }
+    
+    // 파일 열기
+    file = fopen(filename, "r");
+    if (file == NULL) {
+        fprintf(stderr, "head: cannot open '%s' for reading: %s\n", 
+                filename, strerror(errno));
+        return -1;
+    }
+    
+    // 파일이 디렉토리인지 확인
+    struct stat st;
+    if (fstat(fileno(file), &st) == 0 && S_ISDIR(st.st_mode)) {
+        fprintf(stderr, "head: error reading '%s': Is a directory\n", filename);
+        fclose(file);
+        return -1;
+    }
+    
+    // 파일 내용 읽기 및 출력
+    while (line_count < opts->num_lines && fgets(line, sizeof(line), file) != NULL) {
+        printf("%s", line);
+        line_count++;
+    }
+    
+    fclose(file);
+    return 0;
+}
+
+// 옵션 파싱 함수
+int parse_options(int argc, char *argv[], head_options *opts, int *file_start) {
+    int i;
+    
+    // 옵션 초기화
+    opts->num_lines = DEFAULT_LINES;
+    opts->quiet = 0;
+    opts->verbose = 0;
+    
+    for (i = 1; i < argc; i++) {
+        if (argv[i][0] != '-') {
+            break; // 옵션이 아닌 첫 번째 인수
+        }
+        
+        // "--" 처리
+        if (strcmp(argv[i], "--") == 0) {
+            i++;
+            break; // 옵션 끝
+        }
+        
+        // 긴 옵션들
+        if (strcmp(argv[i], "--help") == 0) {
+            print_usage();
+            return 1;
+        }
+        
+        if (strncmp(argv[i], "--lines=", 8) == 0) {
+            int num = parse_number(argv[i] + 8);
+            if (num == -1) return -1;
+            opts->num_lines = num;
+            continue;
+        }
+        
+        if (strcmp(argv[i], "--quiet") == 0 || strcmp(argv[i], "--silent") == 0) {
+            opts->quiet = 1;
+            continue;
+        }
+        
+        if (strcmp(argv[i], "--verbose") == 0) {
+            opts->verbose = 1;
+            continue;
+        }
+        
+        // "-" 단독으로 사용되면 표준 입력을 의미
+        if (strcmp(argv[i], "-") == 0) {
+            break;
+        }
+        
+        // 숫자로 시작하는 옵션 (예: -20, -n20)
+        if (argv[i][1] != '\0' && (isdigit(argv[i][1]) || 
+            (argv[i][1] == 'n' && argc > i + 1))) {
+            
+            if (argv[i][1] == 'n') {
+                // -n 옵션
+                if (argv[i][2] != '\0') {
+                    // -n20 형태
+                    int num = parse_number(argv[i] + 2);
+                    if (num == -1) return -1;
+                    opts->num_lines = num;
+                } else {
+                    // -n 20 형태
+                    if (i + 1 >= argc) {
+                        fprintf(stderr, "head: option requires an argument -- 'n'\n");
+                        return -1;
+                    }
+                    int num = parse_number(argv[i + 1]);
+                    if (num == -1) return -1;
+                    opts->num_lines = num;
+                    i++; // 다음 인수 건너뛰기
+                }
+            } else {
+                // -20 형태
+                int num = parse_number(argv[i] + 1);
+                if (num == -1) return -1;
+                opts->num_lines = num;
+            }
+            continue;
+        }
+        
+        // 짧은 옵션들 처리
+        int j;
+        for (j = 1; argv[i][j] != '\0'; j++) {
+            switch (argv[i][j]) {
+                case 'n':
+                    if (argv[i][j + 1] != '\0') {
+                        // -n20 형태
+                        int num = parse_number(argv[i] + j + 1);
+                        if (num == -1) return -1;
+                        opts->num_lines = num;
+                        j = strlen(argv[i]) - 1; // 루프 종료
+                    } else {
+                        // -n 20 형태
+                        if (i + 1 >= argc) {
+                            fprintf(stderr, "head: option requires an argument -- 'n'\n");
+                            return -1;
+                        }
+                        int num = parse_number(argv[i + 1]);
+                        if (num == -1) return -1;
+                        opts->num_lines = num;
+                        i++; // 다음 인수 건너뛰기
+                        j = strlen(argv[i]) - 1; // 루프 종료
+                    }
+                    break;
+                case 'q':
+                    opts->quiet = 1;
+                    break;
+                case 'v':
+                    opts->verbose = 1;
+                    break;
+                default:
+                    fprintf(stderr, "head: invalid option -- '%c'\n", argv[i][j]);
+                    fprintf(stderr, "Try 'head --help' for more information.\n");
+                    return -1;
+            }
+        }
+    }
+    
+    *file_start = i;
+    return 0;
+}
+
+int main(int argc, char *argv[]) {
+    head_options opts;
+    int file_start;
+    int result = 0;
+    int i;
+    int num_files;
+    
+    // 옵션 파싱
+    int parse_result = parse_options(argc, argv, &opts, &file_start);
+    if (parse_result == 1) {
+        return 0; // help 출력 후 정상 종료
+    }
+    if (parse_result == -1) {
+        return 1; // 옵션 파싱 오류
+    }
+    
+    // 파일 개수 계산
+    num_files = argc - file_start;
+    
+    // 파일 인수가 없으면 표준 입력 사용
+    if (num_files == 0) {
+        if (head_stdin(&opts) == -1) {
+            result = 1;
+        }
+    } else {
+        // 각 파일 처리
+        for (i = file_start; i < argc; i++) {
+            int is_first_file = (i == file_start);
+            int is_last_file = (i == argc - 1);
+            
+            // 파일명 헤더 출력 여부 결정
+            int print_header = 0;
+            if (opts.verbose) {
+                print_header = 1;
+            } else if (!opts.quiet && num_files > 1) {
+                print_header = 1;
+            }
+            
+            // 파일명 헤더 출력
+            if (print_header) {
+                if (!is_first_file) {
+                    printf("\n");
+                }
+                printf("==> %s <==\n", argv[i]);
+            }
+            
+            // 파일 처리
+            if (head_file(argv[i], &opts) == -1) {
+                result = 1;
+            }
+        }
+    }
+    
+    return result;
+}
+
+// 컴파일 방법:
+// gcc -o head head.c
+//
+// 사용 예시:
+// ./head file.txt                   # 첫 10줄 출력
+// ./head -n 5 file.txt              # 첫 5줄 출력
+// ./head -20 file.txt               # 첫 20줄 출력
+// ./head -n5 file.txt               # 첫 5줄 출력 (공백 없음)
+// ./head file1.txt file2.txt        # 여러 파일의 첫 10줄씩 출력
+// ./head -n 3 *.txt                 # 모든 .txt 파일의 첫 3줄씩 출력
+// cat file.txt | ./head -n 15       # 파이프를 통한 입력
+// ./head < input.txt                # 리다이렉션으로 입력
+// ./head -q file1.txt file2.txt     # 파일명 헤더 없이 출력
+// ./head -v file.txt                # 파일 하나여도 헤더 출력
+```
+
+
+
 
 
