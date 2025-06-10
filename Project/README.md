@@ -1,4 +1,4 @@
-
+# I. 파일 및 디렉토리 관리 (File and Directory Management)
 
 ## ls: 현재 디렉토리 파일 및 폴더 목록 출력
 - -l: 상세 정보 (권한, 소유자, 크기, 수정 날짜)
