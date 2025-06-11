@@ -9974,20 +9974,3804 @@ int main(int argc, char *argv[]) {
 
 ## deluser: 사용자 삭제 (관리자 권한)
 
-## addgroup: 새 그룹 추가 (관리자 권한)
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <dirent.h>
+
+// 사용법 출력 함수
+void print_usage(const char* program_name) {
+    printf("사용법: %s [옵션] 사용자명\n", program_name);
+    printf("옵션:\n");
+    printf("  -r, --remove-home    홈 디렉터리도 함께 삭제\n");
+    printf("  -f, --force          강제 삭제 (확인 없이)\n");
+    printf("  -h, --help           도움말 출력\n");
+    printf("\n예시:\n");
+    printf("  %s testuser          # testuser 삭제\n", program_name);
+    printf("  %s -r testuser       # testuser와 홈 디렉터리 삭제\n", program_name);
+}
+
+// 관리자 권한 확인 함수
+int check_admin_privileges() {
+    if (getuid() != 0) {
+        fprintf(stderr, "오류: 이 명령어는 관리자 권한이 필요합니다.\n");
+        fprintf(stderr, "sudo를 사용하여 실행하세요.\n");
+        return 0;
+    }
+    return 1;
+}
+
+// 사용자 존재 확인 함수
+int check_user_exists(const char* username) {
+    struct passwd* pwd = getpwnam(username);
+    return (pwd != NULL);
+}
+
+// 디렉터리 재귀적 삭제 함수
+int remove_directory_recursive(const char* path) {
+    DIR* dir;
+    struct dirent* entry;
+    struct stat statbuf;
+    char full_path[1024];
+    
+    dir = opendir(path);
+    if (dir == NULL) {
+        perror("opendir");
+        return -1;
+    }
+    
+    while ((entry = readdir(dir)) != NULL) {
+        // . 과 .. 건너뛰기
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        
+        snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+        
+        if (lstat(full_path, &statbuf) == -1) {
+            perror("lstat");
+            continue;
+        }
+        
+        if (S_ISDIR(statbuf.st_mode)) {
+            // 디렉터리인 경우 재귀적으로 삭제
+            remove_directory_recursive(full_path);
+        } else {
+            // 파일인 경우 삭제
+            if (unlink(full_path) == -1) {
+                fprintf(stderr, "파일 삭제 실패: %s (%s)\n", full_path, strerror(errno));
+            } else {
+                printf("파일 삭제됨: %s\n", full_path);
+            }
+        }
+    }
+    
+    closedir(dir);
+    
+    // 빈 디렉터리 삭제
+    if (rmdir(path) == -1) {
+        fprintf(stderr, "디렉터리 삭제 실패: %s (%s)\n", path, strerror(errno));
+        return -1;
+    } else {
+        printf("디렉터리 삭제됨: %s\n", path);
+    }
+    
+    return 0;
+}
+
+// 사용자 확인 함수
+int confirm_deletion(const char* username, int remove_home) {
+    char response[10];
+    
+    printf("사용자 '%s'를 삭제하시겠습니까?", username);
+    if (remove_home) {
+        printf(" (홈 디렉터리 포함)");
+    }
+    printf(" [y/N]: ");
+    
+    if (fgets(response, sizeof(response), stdin) == NULL) {
+        return 0;
+    }
+    
+    return (response[0] == 'y' || response[0] == 'Y');
+}
+
+// 시스템 사용자 삭제 함수 (userdel 명령어 사용)
+int delete_system_user(const char* username, int remove_home) {
+    char command[256];
+    int result;
+    
+    if (remove_home) {
+        snprintf(command, sizeof(command), "userdel -r %s", username);
+    } else {
+        snprintf(command, sizeof(command), "userdel %s", username);
+    }
+    
+    printf("시스템 명령어 실행: %s\n", command);
+    result = system(command);
+    
+    if (result == 0) {
+        printf("사용자 '%s'가 성공적으로 삭제되었습니다.\n", username);
+        return 1;
+    } else {
+        fprintf(stderr, "사용자 삭제 중 오류가 발생했습니다.\n");
+        return 0;
+    }
+}
+
+// 수동 사용자 삭제 함수 (passwd, shadow 파일 수정)
+int delete_user_manual(const char* username, int remove_home) {
+    struct passwd* pwd;
+    char temp_file[] = "/tmp/passwd_temp_XXXXXX";
+    char temp_shadow[] = "/tmp/shadow_temp_XXXXXX";
+    FILE* passwd_file, *shadow_file;
+    FILE* temp_passwd, *temp_shadow;
+    char line[1024];
+    char* user_field;
+    int found = 0;
+    
+    // 사용자 정보 가져오기
+    pwd = getpwnam(username);
+    if (pwd == NULL) {
+        fprintf(stderr, "사용자 '%s'를 찾을 수 없습니다.\n", username);
+        return 0;
+    }
+    
+    // 임시 파일 생성
+    int temp_fd = mkstemp(temp_file);
+    if (temp_fd == -1) {
+        perror("임시 파일 생성 실패");
+        return 0;
+    }
+    close(temp_fd);
+    
+    int temp_shadow_fd = mkstemp(temp_shadow);
+    if (temp_shadow_fd == -1) {
+        perror("임시 shadow 파일 생성 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    close(temp_shadow_fd);
+    
+    // /etc/passwd 파일 수정
+    passwd_file = fopen("/etc/passwd", "r");
+    temp_passwd = fopen(temp_file, "w");
+    
+    if (passwd_file == NULL || temp_passwd == NULL) {
+        perror("passwd 파일 열기 실패");
+        if (passwd_file) fclose(passwd_file);
+        if (temp_passwd) fclose(temp_passwd);
+        unlink(temp_file);
+        unlink(temp_shadow);
+        return 0;
+    }
+    
+    while (fgets(line, sizeof(line), passwd_file)) {
+        user_field = strtok(line, ":");
+        if (user_field != NULL && strcmp(user_field, username) == 0) {
+            found = 1;
+            printf("passwd에서 사용자 제거: %s\n", username);
+        } else {
+            fputs(line, temp_passwd);
+            // strtok로 인해 변경된 줄을 복원하기 위해 원본 다시 읽기
+            fseek(passwd_file, ftell(passwd_file) - strlen(line), SEEK_SET);
+            fgets(line, sizeof(line), passwd_file);
+            fputs(line, temp_passwd);
+        }
+    }
+    
+    fclose(passwd_file);
+    fclose(temp_passwd);
+    
+    if (!found) {
+        fprintf(stderr, "passwd 파일에서 사용자를 찾을 수 없습니다.\n");
+        unlink(temp_file);
+        unlink(temp_shadow);
+        return 0;
+    }
+    
+    // /etc/shadow 파일 수정
+    shadow_file = fopen("/etc/shadow", "r");
+    temp_shadow = fopen(temp_shadow, "w");
+    
+    if (shadow_file != NULL && temp_shadow != NULL) {
+        while (fgets(line, sizeof(line), shadow_file)) {
+            user_field = strtok(line, ":");
+            if (user_field == NULL || strcmp(user_field, username) != 0) {
+                // strtok로 인해 변경된 줄을 복원
+                fseek(shadow_file, ftell(shadow_file) - strlen(line), SEEK_SET);
+                fgets(line, sizeof(line), shadow_file);
+                fputs(line, temp_shadow);
+            } else {
+                printf("shadow에서 사용자 제거: %s\n", username);
+            }
+        }
+        fclose(shadow_file);
+        fclose(temp_shadow);
+        
+        // shadow 파일 교체
+        if (rename(temp_shadow, "/etc/shadow") != 0) {
+            perror("shadow 파일 교체 실패");
+        }
+    } else {
+        if (shadow_file) fclose(shadow_file);
+        if (temp_shadow) fclose(temp_shadow);
+        unlink(temp_shadow);
+    }
+    
+    // passwd 파일 교체
+    if (rename(temp_file, "/etc/passwd") != 0) {
+        perror("passwd 파일 교체 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    // 홈 디렉터리 삭제
+    if (remove_home && pwd->pw_dir != NULL) {
+        printf("홈 디렉터리 삭제 중: %s\n", pwd->pw_dir);
+        if (remove_directory_recursive(pwd->pw_dir) == 0) {
+            printf("홈 디렉터리가 삭제되었습니다.\n");
+        }
+    }
+    
+    return 1;
+}
+
+// deluser 명령어 구현
+int deluser_command(int argc, char* argv[]) {
+    int remove_home = 0;
+    int force = 0;
+    char* username = NULL;
+    
+    // 인자 파싱
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--remove-home") == 0) {
+            remove_home = 1;
+        } else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--force") == 0) {
+            force = 1;
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        } else if (argv[i][0] != '-') {
+            username = argv[i];
+        } else {
+            fprintf(stderr, "알 수 없는 옵션: %s\n", argv[i]);
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+    
+    // 사용자명 확인
+    if (username == NULL) {
+        fprintf(stderr, "오류: 사용자명을 입력해주세요.\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    // 관리자 권한 확인
+    if (!check_admin_privileges()) {
+        return 1;
+    }
+    
+    // 사용자 존재 확인
+    if (!check_user_exists(username)) {
+        fprintf(stderr, "오류: 사용자 '%s'가 존재하지 않습니다.\n", username);
+        return 1;
+    }
+    
+    // root 사용자 삭제 방지
+    if (strcmp(username, "root") == 0) {
+        fprintf(stderr, "오류: root 사용자는 삭제할 수 없습니다.\n");
+        return 1;
+    }
+    
+    // 확인 (force 옵션이 없는 경우)
+    if (!force) {
+        if (!confirm_deletion(username, remove_home)) {
+            printf("사용자 삭제가 취소되었습니다.\n");
+            return 0;
+        }
+    }
+    
+    // 사용자 삭제 시도 (시스템 명령어 우선)
+    if (delete_system_user(username, remove_home)) {
+        return 0;
+    }
+    
+    // 시스템 명령어 실패 시 수동 삭제 시도
+    printf("시스템 명령어 실패, 수동 삭제를 시도합니다...\n");
+    if (delete_user_manual(username, remove_home)) {
+        printf("사용자 '%s'가 성공적으로 삭제되었습니다.\n", username);
+        return 0;
+    }
+    
+    fprintf(stderr, "사용자 삭제에 실패했습니다.\n");
+    return 1;
+}
+
+int main(int argc, char* argv[]) {
+    return deluser_command(argc, argv);
+}
+```
+
+## addgroup: 새 그룹 추가 (관리자 권한) 
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <grp.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <errno.h>
+#include <ctype.h>
+
+// 사용법 출력 함수
+void print_usage(const char* program_name) {
+    printf("사용법: %s [옵션] 그룹명\n", program_name);
+    printf("옵션:\n");
+    printf("  -g, --gid GID        그룹 ID 지정\n");
+    printf("  -r, --system         시스템 그룹으로 생성\n");
+    printf("  -f, --force          그룹이 이미 존재해도 성공으로 처리\n");
+    printf("  -h, --help           도움말 출력\n");
+    printf("\n예시:\n");
+    printf("  %s mygroup           # mygroup 그룹 생성\n", program_name);
+    printf("  %s -g 1500 mygroup   # GID 1500으로 mygroup 생성\n", program_name);
+    printf("  %s -r sysgroup       # 시스템 그룹 sysgroup 생성\n", program_name);
+}
+
+// 관리자 권한 확인 함수
+int check_admin_privileges() {
+    if (getuid() != 0) {
+        fprintf(stderr, "오류: 이 명령어는 관리자 권한이 필요합니다.\n");
+        fprintf(stderr, "sudo를 사용하여 실행하세요.\n");
+        return 0;
+    }
+    return 1;
+}
+
+// 그룹 이름 유효성 검사 함수
+int validate_groupname(const char* groupname) {
+    int len = strlen(groupname);
+    
+    // 길이 체크 (최대 32자)
+    if (len == 0 || len > 32) {
+        fprintf(stderr, "오류: 그룹명은 1-32자 사이여야 합니다.\n");
+        return 0;
+    }
+    
+    // 첫 문자는 알파벳 또는 _
+    if (!isalpha(groupname[0]) && groupname[0] != '_') {
+        fprintf(stderr, "오류: 그룹명은 알파벳 또는 '_'로 시작해야 합니다.\n");
+        return 0;
+    }
+    
+    // 나머지 문자는 알파벳, 숫자, _, - 만 허용
+    for (int i = 1; i < len; i++) {
+        if (!isalnum(groupname[i]) && groupname[i] != '_' && groupname[i] != '-') {
+            fprintf(stderr, "오류: 그룹명에는 알파벳, 숫자, '_', '-'만 사용할 수 있습니다.\n");
+            return 0;
+        }
+    }
+    
+    // 예약된 이름 확인
+    if (strcmp(groupname, "root") == 0 || 
+        strcmp(groupname, "daemon") == 0 ||
+        strcmp(groupname, "sys") == 0) {
+        fprintf(stderr, "오류: '%s'는 예약된 그룹명입니다.\n", groupname);
+        return 0;
+    }
+    
+    return 1;
+}
+
+// 그룹 존재 확인 함수
+int check_group_exists(const char* groupname) {
+    struct group* grp = getgrnam(groupname);
+    return (grp != NULL);
+}
+
+// GID 존재 확인 함수
+int check_gid_exists(gid_t gid) {
+    struct group* grp = getgrgid(gid);
+    return (grp != NULL);
+}
+
+// 다음 사용 가능한 GID 찾기 함수
+gid_t find_next_available_gid(int is_system) {
+    gid_t start_gid, end_gid;
+    
+    if (is_system) {
+        start_gid = 100;  // 시스템 그룹 시작 GID
+        end_gid = 999;    // 시스템 그룹 끝 GID
+    } else {
+        start_gid = 1000; // 일반 그룹 시작 GID
+        end_gid = 60000;  // 일반 그룹 끝 GID
+    }
+    
+    for (gid_t gid = start_gid; gid <= end_gid; gid++) {
+        if (!check_gid_exists(gid)) {
+            return gid;
+        }
+    }
+    
+    return (gid_t)-1; // 사용 가능한 GID 없음
+}
+
+// /etc/group 파일에 그룹 추가 함수
+int add_group_to_file(const char* groupname, gid_t gid) {
+    FILE* group_file;
+    char temp_file[] = "/tmp/group_temp_XXXXXX";
+    FILE* temp_group;
+    char line[1024];
+    int temp_fd;
+    int found_insert_pos = 0;
+    
+    // 임시 파일 생성
+    temp_fd = mkstemp(temp_file);
+    if (temp_fd == -1) {
+        perror("임시 파일 생성 실패");
+        return 0;
+    }
+    close(temp_fd);
+    
+    // /etc/group 파일 읽기
+    group_file = fopen("/etc/group", "r");
+    temp_group = fopen(temp_file, "w");
+    
+    if (group_file == NULL || temp_group == NULL) {
+        perror("group 파일 열기 실패");
+        if (group_file) fclose(group_file);
+        if (temp_group) fclose(temp_group);
+        unlink(temp_file);
+        return 0;
+    }
+    
+    // 기존 내용 복사하면서 적절한 위치에 새 그룹 삽입
+    while (fgets(line, sizeof(line), group_file)) {
+        char* line_copy = strdup(line);
+        char* current_group = strtok(line_copy, ":");
+        char* gid_str = strtok(NULL, ":");
+        
+        if (current_group && gid_str) {
+            gid_t current_gid = atoi(gid_str);
+            
+            // GID 순서로 정렬하여 삽입
+            if (!found_insert_pos && current_gid > gid) {
+                fprintf(temp_group, "%s:x:%d:\n", groupname, gid);
+                found_insert_pos = 1;
+            }
+        }
+        
+        fputs(line, temp_group);
+        free(line_copy);
+    }
+    
+    // 파일 끝에 도달했는데 아직 삽입하지 않은 경우
+    if (!found_insert_pos) {
+        fprintf(temp_group, "%s:x:%d:\n", groupname, gid);
+    }
+    
+    fclose(group_file);
+    fclose(temp_group);
+    
+    // 파일 권한 설정 (644)
+    if (chmod(temp_file, 0644) != 0) {
+        perror("파일 권한 설정 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    // 원본 파일 교체
+    if (rename(temp_file, "/etc/group") != 0) {
+        perror("group 파일 교체 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    return 1;
+}
+
+// /etc/gshadow 파일에 그룹 추가 함수
+int add_group_to_gshadow(const char* groupname) {
+    FILE* gshadow_file;
+    char temp_file[] = "/tmp/gshadow_temp_XXXXXX";
+    FILE* temp_gshadow;
+    char line[1024];
+    int temp_fd;
+    
+    // gshadow 파일이 없으면 건너뛰기
+    if (access("/etc/gshadow", F_OK) != 0) {
+        return 1; // gshadow 없어도 성공으로 처리
+    }
+    
+    // 임시 파일 생성
+    temp_fd = mkstemp(temp_file);
+    if (temp_fd == -1) {
+        perror("gshadow 임시 파일 생성 실패");
+        return 0;
+    }
+    close(temp_fd);
+    
+    // /etc/gshadow 파일 처리
+    gshadow_file = fopen("/etc/gshadow", "r");
+    temp_gshadow = fopen(temp_file, "w");
+    
+    if (gshadow_file == NULL || temp_gshadow == NULL) {
+        perror("gshadow 파일 열기 실패");
+        if (gshadow_file) fclose(gshadow_file);
+        if (temp_gshadow) fclose(temp_gshadow);
+        unlink(temp_file);
+        return 0;
+    }
+    
+    // 기존 내용 복사
+    while (fgets(line, sizeof(line), gshadow_file)) {
+        fputs(line, temp_gshadow);
+    }
+    
+    // 새 그룹 추가
+    fprintf(temp_gshadow, "%s:!::\n", groupname);
+    
+    fclose(gshadow_file);
+    fclose(temp_gshadow);
+    
+    // 파일 권한 설정 (640)
+    if (chmod(temp_file, 0640) != 0) {
+        perror("gshadow 파일 권한 설정 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    // 원본 파일 교체
+    if (rename(temp_file, "/etc/gshadow") != 0) {
+        perror("gshadow 파일 교체 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    return 1;
+}
+
+// 시스템 명령어를 사용한 그룹 추가 함수
+int add_group_system_command(const char* groupname, gid_t gid, int is_system) {
+    char command[256];
+    int result;
+    
+    if (gid != (gid_t)-1) {
+        if (is_system) {
+            snprintf(command, sizeof(command), "groupadd -r -g %d %s", gid, groupname);
+        } else {
+            snprintf(command, sizeof(command), "groupadd -g %d %s", gid, groupname);
+        }
+    } else {
+        if (is_system) {
+            snprintf(command, sizeof(command), "groupadd -r %s", groupname);
+        } else {
+            snprintf(command, sizeof(command), "groupadd %s", groupname);
+        }
+    }
+    
+    printf("시스템 명령어 실행: %s\n", command);
+    result = system(command);
+    
+    if (result == 0) {
+        printf("그룹 '%s'가 성공적으로 생성되었습니다.\n", groupname);
+        return 1;
+    } else {
+        fprintf(stderr, "그룹 생성 중 오류가 발생했습니다.\n");
+        return 0;
+    }
+}
+
+// 수동 그룹 추가 함수
+int add_group_manual(const char* groupname, gid_t gid, int is_system) {
+    gid_t final_gid;
+    
+    if (gid != (gid_t)-1) {
+        // 지정된 GID 사용
+        if (check_gid_exists(gid)) {
+            fprintf(stderr, "오류: GID %d는 이미 사용 중입니다.\n", gid);
+            return 0;
+        }
+        final_gid = gid;
+    } else {
+        // 자동으로 GID 할당
+        final_gid = find_next_available_gid(is_system);
+        if (final_gid == (gid_t)-1) {
+            fprintf(stderr, "오류: 사용 가능한 GID를 찾을 수 없습니다.\n");
+            return 0;
+        }
+    }
+    
+    printf("그룹 '%s'를 GID %d로 생성합니다.\n", groupname, final_gid);
+    
+    // /etc/group에 추가
+    if (!add_group_to_file(groupname, final_gid)) {
+        return 0;
+    }
+    
+    // /etc/gshadow에 추가 (선택적)
+    if (!add_group_to_gshadow(groupname)) {
+        fprintf(stderr, "경고: gshadow 파일 업데이트에 실패했습니다.\n");
+    }
+    
+    printf("그룹 '%s' (GID: %d)가 성공적으로 생성되었습니다.\n", groupname, final_gid);
+    return 1;
+}
+
+// addgroup 명령어 구현
+int addgroup_command(int argc, char* argv[]) {
+    gid_t gid = (gid_t)-1;
+    int is_system = 0;
+    int force = 0;
+    char* groupname = NULL;
+    
+    // 인자 파싱
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-g") == 0 || strcmp(argv[i], "--gid") == 0) {
+            if (i + 1 < argc) {
+                gid = atoi(argv[++i]);
+                if (gid <= 0) {
+                    fprintf(stderr, "오류: 유효하지 않은 GID입니다.\n");
+                    return 1;
+                }
+            } else {
+                fprintf(stderr, "오류: -g 옵션에 GID가 필요합니다.\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--system") == 0) {
+            is_system = 1;
+        } else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--force") == 0) {
+            force = 1;
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        } else if (argv[i][0] != '-') {
+            groupname = argv[i];
+        } else {
+            fprintf(stderr, "알 수 없는 옵션: %s\n", argv[i]);
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+    
+    // 그룹명 확인
+    if (groupname == NULL) {
+        fprintf(stderr, "오류: 그룹명을 입력해주세요.\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    // 관리자 권한 확인
+    if (!check_admin_privileges()) {
+        return 1;
+    }
+    
+    // 그룹명 유효성 확인
+    if (!validate_groupname(groupname)) {
+        return 1;
+    }
+    
+    // 그룹 존재 확인
+    if (check_group_exists(groupname)) {
+        if (force) {
+            printf("그룹 '%s'가 이미 존재합니다. (force 옵션으로 무시)\n", groupname);
+            return 0;
+        } else {
+            fprintf(stderr, "오류: 그룹 '%s'가 이미 존재합니다.\n", groupname);
+            return 1;
+        }
+    }
+    
+    // 시스템 그룹인데 일반 GID 범위 지정한 경우 확인
+    if (is_system && gid != (gid_t)-1 && gid >= 1000) {
+        fprintf(stderr, "경고: 시스템 그룹에 일반 사용자 GID 범위를 지정했습니다.\n");
+    }
+    
+    // 그룹 생성 시도 (시스템 명령어 우선)
+    if (add_group_system_command(groupname, gid, is_system)) {
+        return 0;
+    }
+    
+    // 시스템 명령어 실패 시 수동 생성 시도
+    printf("시스템 명령어 실패, 수동 생성을 시도합니다...\n");
+    if (add_group_manual(groupname, gid, is_system)) {
+        return 0;
+    }
+    
+    fprintf(stderr, "그룹 생성에 실패했습니다.\n");
+    return 1;
+}
+
+int main(int argc, char* argv[]) {
+    return addgroup_command(argc, argv);
+}
+```
 
 ## delgroup: 그룹 삭제 (관리자 권한)
 
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <grp.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <errno.h>
+#include <dirent.h>
 
+// 사용법 출력 함수
+void print_usage(const char* program_name) {
+    printf("사용법: %s [옵션] 그룹명\n", program_name);
+    printf("또는: %s [옵션] 사용자명 그룹명\n", program_name);
+    printf("옵션:\n");
+    printf("  -f, --force          강제 삭제 (확인 없이)\n");
+    printf("  --only-if-empty      그룹이 비어있을 때만 삭제\n");
+    printf("  -h, --help           도움말 출력\n");
+    printf("\n사용 모드:\n");
+    printf("  1. 그룹 삭제: %s 그룹명\n", program_name);
+    printf("  2. 사용자를 그룹에서 제거: %s 사용자명 그룹명\n", program_name);
+    printf("\n예시:\n");
+    printf("  %s mygroup           # mygroup 그룹 삭제\n", program_name);
+    printf("  %s user1 mygroup     # user1을 mygroup에서 제거\n", program_name);
+    printf("  %s -f mygroup        # 강제로 mygroup 삭제\n", program_name);
+}
 
+// 관리자 권한 확인 함수
+int check_admin_privileges() {
+    if (getuid() != 0) {
+        fprintf(stderr, "오류: 이 명령어는 관리자 권한이 필요합니다.\n");
+        fprintf(stderr, "sudo를 사용하여 실행하세요.\n");
+        return 0;
+    }
+    return 1;
+}
 
+// 그룹 존재 확인 함수
+struct group* check_group_exists(const char* groupname) {
+    return getgrnam(groupname);
+}
 
+// 사용자 존재 확인 함수
+struct passwd* check_user_exists(const char* username) {
+    return getpwnam(username);
+}
 
+// 그룹이 다른 사용자의 주 그룹인지 확인
+int is_primary_group_for_users(gid_t gid) {
+    struct passwd* pwd;
+    setpwent();
+    
+    while ((pwd = getpwent()) != NULL) {
+        if (pwd->pw_gid == gid) {
+            endpwent();
+            return 1; // 주 그룹으로 사용되고 있음
+        }
+    }
+    
+    endpwent();
+    return 0; // 주 그룹으로 사용되지 않음
+}
 
+// 그룹 멤버 목록 출력
+void print_group_members(struct group* grp) {
+    if (grp->gr_mem && grp->gr_mem[0]) {
+        printf("그룹 멤버: ");
+        for (int i = 0; grp->gr_mem[i]; i++) {
+            printf("%s", grp->gr_mem[i]);
+            if (grp->gr_mem[i + 1]) {
+                printf(", ");
+            }
+        }
+        printf("\n");
+    } else {
+        printf("그룹 멤버: 없음\n");
+    }
+}
 
+// 사용자가 그룹의 멤버인지 확인
+int is_user_in_group(const char* username, struct group* grp) {
+    if (!grp->gr_mem) return 0;
+    
+    for (int i = 0; grp->gr_mem[i]; i++) {
+        if (strcmp(grp->gr_mem[i], username) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
+// 그룹 삭제 확인 함수
+int confirm_group_deletion(const char* groupname, struct group* grp, int only_if_empty) {
+    char response[10];
+    
+    printf("그룹 정보:\n");
+    printf("  그룹명: %s\n", grp->gr_name);
+    printf("  GID: %d\n", grp->gr_gid);
+    print_group_members(grp);
+    
+    // 주 그룹 확인
+    if (is_primary_group_for_users(grp->gr_gid)) {
+        printf("  경고: 이 그룹은 일부 사용자의 주 그룹입니다!\n");
+    }
+    
+    // only-if-empty 옵션 확인
+    if (only_if_empty) {
+        if (grp->gr_mem && grp->gr_mem[0]) {
+            fprintf(stderr, "오류: 그룹이 비어있지 않습니다. (--only-if-empty 옵션)\n");
+            return 0;
+        }
+        if (is_primary_group_for_users(grp->gr_gid)) {
+            fprintf(stderr, "오류: 그룹이 사용자의 주 그룹으로 사용되고 있습니다.\n");
+            return 0;
+        }
+    }
+    
+    printf("\n그룹 '%s'를 삭제하시겠습니까? [y/N]: ", groupname);
+    
+    if (fgets(response, sizeof(response), stdin) == NULL) {
+        return 0;
+    }
+    
+    return (response[0] == 'y' || response[0] == 'Y');
+}
 
+// /etc/group 파일에서 그룹 제거
+int remove_group_from_file(const char* groupname) {
+    FILE* group_file;
+    char temp_file[] = "/tmp/group_temp_XXXXXX";
+    FILE* temp_group;
+    char line[1024];
+    int temp_fd;
+    int found = 0;
+    
+    // 임시 파일 생성
+    temp_fd = mkstemp(temp_file);
+    if (temp_fd == -1) {
+        perror("임시 파일 생성 실패");
+        return 0;
+    }
+    close(temp_fd);
+    
+    // /etc/group 파일 처리
+    group_file = fopen("/etc/group", "r");
+    temp_group = fopen(temp_file, "w");
+    
+    if (group_file == NULL || temp_group == NULL) {
+        perror("group 파일 열기 실패");
+        if (group_file) fclose(group_file);
+        if (temp_group) fclose(temp_group);
+        unlink(temp_file);
+        return 0;
+    }
+    
+    while (fgets(line, sizeof(line), group_file)) {
+        char* line_copy = strdup(line);
+        char* current_group = strtok(line_copy, ":");
+        
+        if (current_group && strcmp(current_group, groupname) == 0) {
+            found = 1;
+            printf("group 파일에서 그룹 제거: %s\n", groupname);
+        } else {
+            fputs(line, temp_group);
+        }
+        
+        free(line_copy);
+    }
+    
+    fclose(group_file);
+    fclose(temp_group);
+    
+    if (!found) {
+        fprintf(stderr, "경고: group 파일에서 그룹을 찾을 수 없습니다.\n");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    // 파일 권한 설정
+    if (chmod(temp_file, 0644) != 0) {
+        perror("파일 권한 설정 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    // 원본 파일 교체
+    if (rename(temp_file, "/etc/group") != 0) {
+        perror("group 파일 교체 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    return 1;
+}
 
+// /etc/gshadow 파일에서 그룹 제거
+int remove_group_from_gshadow(const char* groupname) {
+    FILE* gshadow_file;
+    char temp_file[] = "/tmp/gshadow_temp_XXXXXX";
+    FILE* temp_gshadow;
+    char line[1024];
+    int temp_fd;
+    int found = 0;
+    
+    // gshadow 파일이 없으면 건너뛰기
+    if (access("/etc/gshadow", F_OK) != 0) {
+        return 1; // gshadow 없어도 성공으로 처리
+    }
+    
+    // 임시 파일 생성
+    temp_fd = mkstemp(temp_file);
+    if (temp_fd == -1) {
+        perror("gshadow 임시 파일 생성 실패");
+        return 0;
+    }
+    close(temp_fd);
+    
+    // /etc/gshadow 파일 처리
+    gshadow_file = fopen("/etc/gshadow", "r");
+    temp_gshadow = fopen(temp_file, "w");
+    
+    if (gshadow_file == NULL || temp_gshadow == NULL) {
+        perror("gshadow 파일 열기 실패");
+        if (gshadow_file) fclose(gshadow_file);
+        if (temp_gshadow) fclose(temp_gshadow);
+        unlink(temp_file);
+        return 0;
+    }
+    
+    while (fgets(line, sizeof(line), gshadow_file)) {
+        char* line_copy = strdup(line);
+        char* current_group = strtok(line_copy, ":");
+        
+        if (current_group && strcmp(current_group, groupname) == 0) {
+            found = 1;
+            printf("gshadow 파일에서 그룹 제거: %s\n", groupname);
+        } else {
+            fputs(line, temp_gshadow);
+        }
+        
+        free(line_copy);
+    }
+    
+    fclose(gshadow_file);
+    fclose(temp_gshadow);
+    
+    if (!found) {
+        printf("gshadow 파일에 그룹이 없습니다.\n");
+        unlink(temp_file);
+        return 1; // 없어도 성공으로 처리
+    }
+    
+    // 파일 권한 설정
+    if (chmod(temp_file, 0640) != 0) {
+        perror("gshadow 파일 권한 설정 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    // 원본 파일 교체
+    if (rename(temp_file, "/etc/gshadow") != 0) {
+        perror("gshadow 파일 교체 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    return 1;
+}
 
+// 모든 그룹에서 사용자 제거
+int remove_user_from_all_groups(const char* username) {
+    FILE* group_file;
+    char temp_file[] = "/tmp/group_temp_XXXXXX";
+    FILE* temp_group;
+    char line[1024];
+    int temp_fd;
+    int modified = 0;
+    
+    // 임시 파일 생성
+    temp_fd = mkstemp(temp_file);
+    if (temp_fd == -1) {
+        perror("임시 파일 생성 실패");
+        return 0;
+    }
+    close(temp_fd);
+    
+    group_file = fopen("/etc/group", "r");
+    temp_group = fopen(temp_file, "w");
+    
+    if (group_file == NULL || temp_group == NULL) {
+        perror("group 파일 열기 실패");
+        if (group_file) fclose(group_file);
+        if (temp_group) fclose(temp_group);
+        unlink(temp_file);
+        return 0;
+    }
+    
+    while (fgets(line, sizeof(line), group_file)) {
+        char* line_copy = strdup(line);
+        char* group_name = strtok(line_copy, ":");
+        char* password = strtok(NULL, ":");
+        char* gid_str = strtok(NULL, ":");
+        char* members = strtok(NULL, ":");
+        
+        if (group_name && password && gid_str) {
+            // 멤버 목록에서 사용자 제거
+            if (members && strlen(members) > 0) {
+                char new_members[1024] = "";
+                char* member = strtok(members, ",");
+                int first = 1;
+                
+                while (member) {
+                    // 공백 제거
+                    while (*member == ' ') member++;
+                    char* end = member + strlen(member) - 1;
+                    while (end > member && (*end == ' ' || *end == '\n' || *end == '\r')) {
+                        *end = '\0';
+                        end--;
+                    }
+                    
+                    if (strcmp(member, username) != 0) {
+                        if (!first) {
+                            strcat(new_members, ",");
+                        }
+                        strcat(new_members, member);
+                        first = 0;
+                    } else {
+                        modified = 1;
+                        printf("그룹 %s에서 사용자 %s 제거\n", group_name, username);
+                    }
+                    member = strtok(NULL, ",");
+                }
+                
+                fprintf(temp_group, "%s:%s:%s:%s\n", group_name, password, gid_str, new_members);
+            } else {
+                fprintf(temp_group, "%s:%s:%s:\n", group_name, password, gid_str);
+            }
+        }
+        
+        free(line_copy);
+    }
+    
+    fclose(group_file);
+    fclose(temp_group);
+    
+    if (!modified) {
+        unlink(temp_file);
+        return 1; // 변경사항 없어도 성공
+    }
+    
+    // 파일 권한 설정
+    if (chmod(temp_file, 0644) != 0) {
+        perror("파일 권한 설정 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    // 원본 파일 교체
+    if (rename(temp_file, "/etc/group") != 0) {
+        perror("group 파일 교체 실패");
+        unlink(temp_file);
+        return 0;
+    }
+    
+    return 1;
+}
 
+// 특정 그룹에서 사용자 제거
+int remove_user_from_group(const char* username, const char* groupname) {
+    struct group* grp = check_group_exists(groupname);
+    if (!grp) {
+        fprintf(stderr, "오류: 그룹 '%s'가 존재하지 않습니다.\n", groupname);
+        return 0;
+    }
+    
+    struct passwd* pwd = check_user_exists(username);
+    if (!pwd) {
+        fprintf(stderr, "오류: 사용자 '%s'가 존재하지 않습니다.\n", username);
+        return 0;
+    }
+    
+    // 사용자가 그룹의 멤버인지 확인
+    if (!is_user_in_group(username, grp)) {
+        printf("사용자 '%s'는 그룹 '%s'의 멤버가 아닙니다.\n", username, groupname);
+        return 1;
+    }
+    
+    // 주 그룹인지 확인
+    if (pwd->pw_gid == grp->gr_gid) {
+        fprintf(stderr, "오류: '%s'는 사용자 '%s'의 주 그룹입니다. 주 그룹에서는 제거할 수 없습니다.\n", 
+                groupname, username);
+        return 0;
+    }
+    
+    // 시스템 명령어 시도
+    char command[256];
+    snprintf(command, sizeof(command), "gpasswd -d %s %s", username, groupname);
+    printf("시스템 명령어 실행: %s\n", command);
+    
+    int result = system(command);
+    if (result == 0) {
+        printf("사용자 '%s'가 그룹 '%s'에서 제거되었습니다.\n", username, groupname);
+        return 1;
+    }
+    
+    // 시스템 명령어 실패 시 수동 처리
+    printf("시스템 명령어 실패, 수동 처리를 시도합니다...\n");
+    return remove_user_from_all_groups(username);
+}
+
+// 시스템 명령어를 사용한 그룹 삭제
+int delete_group_system_command(const char* groupname) {
+    char command[256];
+    snprintf(command, sizeof(command), "groupdel %s", groupname);
+    
+    printf("시스템 명령어 실행: %s\n", command);
+    int result = system(command);
+    
+    if (result == 0) {
+        printf("그룹 '%s'가 성공적으로 삭제되었습니다.\n", groupname);
+        return 1;
+    } else {
+        fprintf(stderr, "그룹 삭제 중 오류가 발생했습니다.\n");
+        return 0;
+    }
+}
+
+// 수동 그룹 삭제
+int delete_group_manual(const char* groupname) {
+    // /etc/group에서 제거
+    if (!remove_group_from_file(groupname)) {
+        return 0;
+    }
+    
+    // /etc/gshadow에서 제거
+    if (!remove_group_from_gshadow(groupname)) {
+        fprintf(stderr, "경고: gshadow 파일 업데이트에 실패했습니다.\n");
+    }
+    
+    printf("그룹 '%s'가 성공적으로 삭제되었습니다.\n", groupname);
+    return 1;
+}
+
+// delgroup 명령어 구현
+int delgroup_command(int argc, char* argv[]) {
+    int force = 0;
+    int only_if_empty = 0;
+    char* username = NULL;
+    char* groupname = NULL;
+    
+    // 인자 파싱
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--force") == 0) {
+            force = 1;
+        } else if (strcmp(argv[i], "--only-if-empty") == 0) {
+            only_if_empty = 1;
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        } else if (argv[i][0] != '-') {
+            if (username == NULL) {
+                username = argv[i];
+            } else if (groupname == NULL) {
+                groupname = argv[i];
+            } else {
+                fprintf(stderr, "오류: 너무 많은 인자입니다.\n");
+                print_usage(argv[0]);
+                return 1;
+            }
+        } else {
+            fprintf(stderr, "알 수 없는 옵션: %s\n", argv[i]);
+            print_usage(argv[0]);
+            return 1;
+        }
+    }
+    
+    // 인자 검증
+    if (username == NULL) {
+        fprintf(stderr, "오류: 그룹명 또는 사용자명을 입력해주세요.\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    // 관리자 권한 확인
+    if (!check_admin_privileges()) {
+        return 1;
+    }
+    
+    // 모드 결정: 사용자를 그룹에서 제거 vs 그룹 삭제
+    if (groupname != NULL) {
+        // 사용자를 그룹에서 제거
+        return remove_user_from_group(username, groupname) ? 0 : 1;
+    } else {
+        // 그룹 삭제
+        groupname = username;
+        
+        // 그룹 존재 확인
+        struct group* grp = check_group_exists(groupname);
+        if (!grp) {
+            fprintf(stderr, "오류: 그룹 '%s'가 존재하지 않습니다.\n", groupname);
+            return 1;
+        }
+        
+        // 시스템 그룹 보호
+        if (grp->gr_gid < 100) {
+            fprintf(stderr, "오류: 시스템 그룹 '%s' (GID: %d)는 삭제할 수 없습니다.\n", 
+                    groupname, grp->gr_gid);
+            return 1;
+        }
+        
+        // root 그룹 보호
+        if (strcmp(groupname, "root") == 0) {
+            fprintf(stderr, "오류: root 그룹은 삭제할 수 없습니다.\n");
+            return 1;
+        }
+        
+        // 확인 (force 옵션이 없는 경우)
+        if (!force) {
+            if (!confirm_group_deletion(groupname, grp, only_if_empty)) {
+                printf("그룹 삭제가 취소되었습니다.\n");
+                return 0;
+            }
+        } else if (only_if_empty) {
+            // force와 only-if-empty가 함께 사용된 경우에도 빈 그룹 확인
+            if ((grp->gr_mem && grp->gr_mem[0]) || is_primary_group_for_users(grp->gr_gid)) {
+                fprintf(stderr, "오류: 그룹이 비어있지 않습니다. (--only-if-empty 옵션)\n");
+                return 1;
+            }
+        }
+        
+        // 그룹 삭제 시도 (시스템 명령어 우선)
+        if (delete_group_system_command(groupname)) {
+            return 0;
+        }
+        
+        // 시스템 명령어 실패 시 수동 삭제 시도
+        printf("시스템 명령어 실패, 수동 삭제를 시도합니다...\n");
+        if (delete_group_manual(groupname)) {
+            return 0;
+        }
+        
+        fprintf(stderr, "그룹 삭제에 실패했습니다.\n");
+        return 1;
+    }
+}
+
+int main(int argc, char* argv[]) {
+    return delgroup_command(argc, argv);
+}
+```
+
+# IV. 네트워크 기능 (Network Functionality)
+
+## ping: 네트워크 호스트에 대한 응답 시간 확인
+- -c COUNT: 지정된 횟수만큼만 전송
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <netinet/in.h>
+#include <netinet/ip_icmp.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <signal.h>
+#include <errno.h>
+
+#define PACKET_SIZE 64
+#define MAX_WAIT_TIME 5
+#define PING_SLEEP_RATE 1000000
+
+struct ping_packet {
+    struct icmphdr hdr;
+    char msg[PACKET_SIZE - sizeof(struct icmphdr)];
+};
+
+int sockfd;
+int ping_count = 0;
+int packets_sent = 0;
+int packets_received = 0;
+char *ping_target_ip;
+char *ping_target_hostname;
+struct sockaddr_in ping_addr;
+
+// 체크섬 계산 함수
+unsigned short checksum(void *b, int len) {
+    unsigned short *buf = b;
+    unsigned int sum = 0;
+    unsigned short result;
+
+    // 2바이트씩 더하기
+    for (sum = 0; len > 1; len -= 2) {
+        sum += *buf++;
+    }
+
+    // 홀수 바이트가 남았을 경우
+    if (len == 1) {
+        sum += *(unsigned char*)buf << 8;
+    }
+
+    // 캐리 비트를 더하기
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+
+    result = ~sum;
+    return result;
+}
+
+// DNS 호스트명을 IP로 변환
+char* dns_lookup(char *addr_host, struct sockaddr_in *addr_con) {
+    struct hostent *host_entity;
+    char *ip = malloc(16);
+    
+    if ((host_entity = gethostbyname(addr_host)) == NULL) {
+        return NULL;
+    }
+    
+    strcpy(ip, inet_ntoa(*((struct in_addr *)host_entity->h_addr)));
+    (*addr_con).sin_family = host_entity->h_addrtype;
+    (*addr_con).sin_port = 0;
+    (*addr_con).sin_addr.s_addr = *((unsigned long *)host_entity->h_addr);
+    
+    return ip;
+}
+
+// 역방향 DNS 조회
+char* reverse_dns_lookup(char *ip_addr) {
+    struct sockaddr_in addr;
+    socklen_t len;
+    char buf[NI_MAXHOST], *ret_buf;
+    
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(ip_addr);
+    len = sizeof(struct sockaddr_in);
+    
+    if (getnameinfo((struct sockaddr *) &addr, len, buf, sizeof(buf), NULL, 0, NI_NAMEREQD)) {
+        return NULL;
+    }
+    
+    ret_buf = malloc(strlen(buf) + 1);
+    strcpy(ret_buf, buf);
+    return ret_buf;
+}
+
+// ping 패킷 전송
+void send_ping(int ping_sockfd, struct sockaddr_in *ping_addr, char *ping_dom, char *ping_ip, char *rev_host) {
+    int ttl_val = 64, msg_count = 0, flag = 1, msg_received_count = 0;
+    
+    struct ping_packet pckt;
+    struct sockaddr_in r_addr;
+    struct timespec time_start, time_end, tfs, tfe;
+    long double rtt_msec = 0, total_msec = 0;
+    struct timeval tv_out;
+    tv_out.tv_sec = MAX_WAIT_TIME;
+    tv_out.tv_usec = 0;
+
+    clock_gettime(CLOCK_MONOTONIC, &tfs);
+
+    // TTL 설정
+    if (setsockopt(ping_sockfd, SOL_IP, IP_TTL, &ttl_val, sizeof(ttl_val)) != 0) {
+        printf("\nTTL 설정 실패\n");
+        return;
+    }
+
+    // 수신 타임아웃 설정
+    setsockopt(ping_sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv_out, sizeof tv_out);
+
+    printf("PING %s (%s) %d(%d) bytes of data.\n", ping_dom, ping_ip, PACKET_SIZE, PACKET_SIZE + 28);
+
+    // ping 전송
+    while (1) {
+        // ping_count가 설정되어 있고 그 수만큼 보냈으면 종료
+        if (ping_count > 0 && msg_count >= ping_count) {
+            break;
+        }
+
+        flag = 1;
+
+        // 패킷 초기화
+        bzero(&pckt, sizeof(pckt));
+
+        pckt.hdr.type = ICMP_ECHO;
+        pckt.hdr.un.echo.id = getpid();
+        
+        for (int i = 0; i < sizeof(pckt.msg) - 1; i++) {
+            pckt.msg[i] = i + '0';
+        }
+        
+        pckt.msg[sizeof(pckt.msg) - 1] = 0;
+        pckt.hdr.un.echo.sequence = msg_count++;
+        pckt.hdr.checksum = 0;
+        pckt.hdr.checksum = checksum(&pckt, sizeof(pckt));
+
+        usleep(PING_SLEEP_RATE);
+
+        // 전송 시간 기록
+        clock_gettime(CLOCK_MONOTONIC, &time_start);
+        
+        if (sendto(ping_sockfd, &pckt, sizeof(pckt), 0, (struct sockaddr*) ping_addr, sizeof(*ping_addr)) <= 0) {
+            printf("\n패킷 전송 실패\n");
+            flag = 0;
+        }
+
+        packets_sent++;
+
+        // 응답 수신
+        socklen_t addr_len = sizeof(r_addr);
+
+        if (recvfrom(ping_sockfd, &pckt, sizeof(pckt), 0, (struct sockaddr*)&r_addr, &addr_len) <= 0 && msg_count > 1) {
+            printf("\n패킷 수신 실패\n");
+        } else {
+            clock_gettime(CLOCK_MONOTONIC, &time_end);
+            
+            double timeElapsed = ((double)(time_end.tv_nsec - time_start.tv_nsec)) / 1000000.0;
+            rtt_msec = (time_end.tv_sec - time_start.tv_sec) * 1000.0 + timeElapsed;
+            
+            if (flag) {
+                if (!(pckt.hdr.type == 69 && pckt.hdr.code == 0)) {
+                    printf("오류..패킷 수신됨 타입 %d 코드 %d\n", pckt.hdr.type, pckt.hdr.code);
+                } else {
+                    printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2Lf ms\n", 
+                           PACKET_SIZE, ping_ip, msg_count, ttl_val, rtt_msec);
+                    msg_received_count++;
+                    packets_received++;
+                }
+            }
+        }
+    }
+    clock_gettime(CLOCK_MONOTONIC, &tfe);
+    double timeElapsed = ((double)(tfe.tv_nsec - tfs.tv_nsec)) / 1000000.0;
+    total_msec = (tfe.tv_sec - tfs.tv_sec) * 1000.0 + timeElapsed;
+    
+    printf("\n--- %s ping statistics ---\n", ping_ip);
+    printf("%d packets transmitted, %d received, %d%% packet loss, time %.0fms\n", 
+           packets_sent, packets_received, 
+           ((packets_sent - packets_received) / packets_sent) * 100, total_msec);
+}
+
+// 시그널 핸들러 (Ctrl+C)
+void intHandler(int dummy) {
+    printf("\n--- %s ping statistics ---\n", ping_target_ip);
+    printf("%d packets transmitted, %d received, %d%% packet loss\n", 
+           packets_sent, packets_received, 
+           ((packets_sent - packets_received) / packets_sent) * 100);
+    close(sockfd);
+    exit(0);
+}
+
+int main(int argc, char *argv[]) {
+    int sockfd;
+    char *ip_str, *reverse_hostname;
+    struct sockaddr_in addr_con;
+    int addrlen = sizeof(addr_con);
+    char net_buf[NI_MAXHOST];
+    
+    // 인자 파싱
+    if (argc < 2) {
+        printf("사용법: %s [-c count] hostname\n", argv[0]);
+        return -1;
+    }
+    
+    char *hostname = NULL;
+    
+    // -c 옵션 처리
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
+            ping_count = atoi(argv[i + 1]);
+            i++; // 다음 인자는 건너뛰기
+        } else {
+            hostname = argv[i];
+        }
+    }
+    
+    if (hostname == NULL) {
+        printf("호스트명을 입력해주세요.\n");
+        return -1;
+    }
+
+    // IP 주소로 변환
+    ip_str = dns_lookup(hostname, &addr_con);
+    if (ip_str == NULL) {
+        printf("\nDNS 조회 실패.. 호스트명이나 IP를 확인해주세요\n");
+        return -1;
+    }
+
+    ping_target_hostname = hostname;
+    ping_target_ip = ip_str;
+    ping_addr = addr_con;
+    
+    reverse_hostname = reverse_dns_lookup(ip_str);
+    
+    printf("PING %s (%s) %d(%d) bytes of data.\n", 
+           reverse_hostname != NULL ? reverse_hostname : hostname, 
+           ip_str, PACKET_SIZE, PACKET_SIZE + 28);
+
+    // 원시 소켓 생성 (root 권한 필요)
+    sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (sockfd < 0) {
+        printf("소켓 생성 실패. root 권한으로 실행해주세요.\n");
+        return -1;
+    }
+
+    // 시그널 핸들러 등록
+    signal(SIGINT, intHandler);
+
+    // ping 전송
+    send_ping(sockfd, &addr_con, reverse_hostname, ip_str, reverse_hostname);
+
+    close(sockfd);
+    return 0;
+}
+```
+
+## ifconfig / ip addr (간략화): 네트워크 인터페이스 정보 출력
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <netpacket/packet.h>
+#include <net/ethernet.h>
+
+// MAC 주소를 문자열로 변환
+void format_mac_address(unsigned char *mac, char *buffer) {
+    sprintf(buffer, "%02x:%02x:%02x:%02x:%02x:%02x",
+            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+// 바이트 단위를 읽기 쉬운 형태로 변환
+void format_bytes(unsigned long bytes, char *buffer) {
+    if (bytes >= 1024 * 1024 * 1024) {
+        sprintf(buffer, "%.1f GB", (double)bytes / (1024 * 1024 * 1024));
+    } else if (bytes >= 1024 * 1024) {
+        sprintf(buffer, "%.1f MB", (double)bytes / (1024 * 1024));
+    } else if (bytes >= 1024) {
+        sprintf(buffer, "%.1f KB", (double)bytes / 1024);
+    } else {
+        sprintf(buffer, "%lu B", bytes);
+    }
+}
+
+// 인터페이스 플래그를 문자열로 변환
+void format_flags(unsigned int flags, char *buffer) {
+    buffer[0] = '\0';
+    
+    if (flags & IFF_UP) strcat(buffer, "UP ");
+    if (flags & IFF_BROADCAST) strcat(buffer, "BROADCAST ");
+    if (flags & IFF_DEBUG) strcat(buffer, "DEBUG ");
+    if (flags & IFF_LOOPBACK) strcat(buffer, "LOOPBACK ");
+    if (flags & IFF_POINTOPOINT) strcat(buffer, "POINTOPOINT ");
+    if (flags & IFF_RUNNING) strcat(buffer, "RUNNING ");
+    if (flags & IFF_NOARP) strcat(buffer, "NOARP ");
+    if (flags & IFF_PROMISC) strcat(buffer, "PROMISC ");
+    if (flags & IFF_NOTRAILERS) strcat(buffer, "NOTRAILERS ");
+    if (flags & IFF_ALLMULTI) strcat(buffer, "ALLMULTI ");
+    if (flags & IFF_MASTER) strcat(buffer, "MASTER ");
+    if (flags & IFF_SLAVE) strcat(buffer, "SLAVE ");
+    if (flags & IFF_MULTICAST) strcat(buffer, "MULTICAST ");
+    
+    // 마지막 공백 제거
+    int len = strlen(buffer);
+    if (len > 0 && buffer[len - 1] == ' ') {
+        buffer[len - 1] = '\0';
+    }
+}
+
+// 네트워크 통계 정보 읽기
+int get_interface_stats(const char *interface, unsigned long *rx_bytes, 
+                       unsigned long *tx_bytes, unsigned long *rx_packets, 
+                       unsigned long *tx_packets) {
+    FILE *fp;
+    char path[256];
+    char buffer[256];
+    
+    // RX bytes
+    snprintf(path, sizeof(path), "/sys/class/net/%s/statistics/rx_bytes", interface);
+    fp = fopen(path, "r");
+    if (fp) {
+        if (fgets(buffer, sizeof(buffer), fp)) {
+            *rx_bytes = strtoul(buffer, NULL, 10);
+        }
+        fclose(fp);
+    }
+    
+    // TX bytes
+    snprintf(path, sizeof(path), "/sys/class/net/%s/statistics/tx_bytes", interface);
+    fp = fopen(path, "r");
+    if (fp) {
+        if (fgets(buffer, sizeof(buffer), fp)) {
+            *tx_bytes = strtoul(buffer, NULL, 10);
+        }
+        fclose(fp);
+    }
+    
+    // RX packets
+    snprintf(path, sizeof(path), "/sys/class/net/%s/statistics/rx_packets", interface);
+    fp = fopen(path, "r");
+    if (fp) {
+        if (fgets(buffer, sizeof(buffer), fp)) {
+            *rx_packets = strtoul(buffer, NULL, 10);
+        }
+        fclose(fp);
+    }
+    
+    // TX packets
+    snprintf(path, sizeof(path), "/sys/class/net/%s/statistics/tx_packets", interface);
+    fp = fopen(path, "r");
+    if (fp) {
+        if (fgets(buffer, sizeof(buffer), fp)) {
+            *tx_packets = strtoul(buffer, NULL, 10);
+        }
+        fclose(fp);
+    }
+    
+    return 0;
+}
+
+// MTU 크기 가져오기
+int get_mtu(const char *interface) {
+    int sockfd;
+    struct ifreq ifr;
+    
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) return -1;
+    
+    strncpy(ifr.ifr_name, interface, IFNAMSIZ - 1);
+    ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+    
+    if (ioctl(sockfd, SIOCGIFMTU, &ifr) < 0) {
+        close(sockfd);
+        return -1;
+    }
+    
+    close(sockfd);
+    return ifr.ifr_mtu;
+}
+
+// 특정 인터페이스 정보 출력
+void show_interface(const char *interface_name) {
+    struct ifaddrs *ifaddr, *ifa;
+    char host[NI_MAXHOST];
+    char mac_str[18];
+    char flags_str[256];
+    char rx_bytes_str[32], tx_bytes_str[32];
+    unsigned long rx_bytes = 0, tx_bytes = 0, rx_packets = 0, tx_packets = 0;
+    int mtu;
+    int found = 0;
+    
+    if (getifaddrs(&ifaddr) == -1) {
+        perror("getifaddrs");
+        return;
+    }
+    
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL) continue;
+        
+        // 특정 인터페이스만 출력하거나 모든 인터페이스 출력
+        if (interface_name && strcmp(ifa->ifa_name, interface_name) != 0) {
+            continue;
+        }
+        
+        // 중복 출력 방지
+        if (found && interface_name && strcmp(ifa->ifa_name, interface_name) == 0) {
+            if (ifa->ifa_addr->sa_family != AF_INET && ifa->ifa_addr->sa_family != AF_INET6) {
+                continue;
+            }
+        }
+        
+        if (!found || !interface_name || strcmp(ifa->ifa_name, interface_name) == 0) {
+            // 인터페이스 헤더 출력 (처음 한 번만)
+            static char last_interface[IFNAMSIZ] = "";
+            if (strcmp(last_interface, ifa->ifa_name) != 0) {
+                strcpy(last_interface, ifa->ifa_name);
+                
+                printf("%s: ", ifa->ifa_name);
+                
+                // 플래그 정보
+                format_flags(ifa->ifa_flags, flags_str);
+                printf("flags=%d<%s> ", ifa->ifa_flags, flags_str);
+                
+                // MTU 정보
+                mtu = get_mtu(ifa->ifa_name);
+                if (mtu > 0) {
+                    printf("mtu %d\n", mtu);
+                } else {
+                    printf("\n");
+                }
+                
+                // 통계 정보 가져오기
+                get_interface_stats(ifa->ifa_name, &rx_bytes, &tx_bytes, &rx_packets, &tx_packets);
+            }
+        }
+        
+        // IP 주소 정보
+        if (ifa->ifa_addr->sa_family == AF_INET) {
+            struct sockaddr_in *addr_in = (struct sockaddr_in *)ifa->ifa_addr;
+            struct sockaddr_in *netmask_in = (struct sockaddr_in *)ifa->ifa_netmask;
+            struct sockaddr_in *broadcast_in = (struct sockaddr_in *)ifa->ifa_broadaddr;
+            
+            printf("        inet %s", inet_ntoa(addr_in->sin_addr));
+            
+            if (netmask_in) {
+                printf("  netmask %s", inet_ntoa(netmask_in->sin_addr));
+            }
+            
+            if (broadcast_in && (ifa->ifa_flags & IFF_BROADCAST)) {
+                printf("  broadcast %s", inet_ntoa(broadcast_in->sin_addr));
+            }
+            printf("\n");
+        }
+        
+        // IPv6 주소 정보
+        else if (ifa->ifa_addr->sa_family == AF_INET6) {
+            struct sockaddr_in6 *addr_in6 = (struct sockaddr_in6 *)ifa->ifa_addr;
+            char addr_str[INET6_ADDRSTRLEN];
+            
+            if (inet_ntop(AF_INET6, &addr_in6->sin6_addr, addr_str, INET6_ADDRSTRLEN)) {
+                printf("        inet6 %s", addr_str);
+                
+                // Scope ID 출력
+                if (addr_in6->sin6_scope_id > 0) {
+                    printf("%%%d", addr_in6->sin6_scope_id);
+                }
+                
+                // 프리픽스 길이 (간단히 /64로 가정)
+                printf("/64");
+                
+                // 주소 타입
+                if (IN6_IS_ADDR_LINKLOCAL(&addr_in6->sin6_addr)) {
+                    printf("  scopeid 0x%x<link>", addr_in6->sin6_scope_id);
+                } else if (IN6_IS_ADDR_LOOPBACK(&addr_in6->sin6_addr)) {
+                    printf("  scopeid 0x%x<host>", addr_in6->sin6_scope_id);
+                }
+                printf("\n");
+            }
+        }
+        
+        // MAC 주소 정보 (패킷 소켓)
+        else if (ifa->ifa_addr->sa_family == AF_PACKET) {
+            struct sockaddr_ll *s = (struct sockaddr_ll *)ifa->ifa_addr;
+            if (s->sll_halen == 6) {  // Ethernet MAC
+                format_mac_address(s->sll_addr, mac_str);
+                printf("        ether %s  txqueuelen 1000  (Ethernet)\n", mac_str);
+                
+                // 통계 정보 출력
+                format_bytes(rx_bytes, rx_bytes_str);
+                format_bytes(tx_bytes, tx_bytes_str);
+                
+                printf("        RX packets %lu  bytes %lu (%s)\n", rx_packets, rx_bytes, rx_bytes_str);
+                printf("        RX errors 0  dropped 0  overruns 0  frame 0\n");
+                printf("        TX packets %lu  bytes %lu (%s)\n", tx_packets, tx_bytes, tx_bytes_str);
+                printf("        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0\n");
+                printf("\n");
+            }
+        }
+        
+        found = 1;
+        if (interface_name) break;
+    }
+    
+    if (interface_name && !found) {
+        printf("%s: error fetching interface information: Device not found\n", interface_name);
+    }
+    
+    freeifaddrs(ifaddr);
+}
+
+// 사용법 출력
+void print_usage(const char *program_name) {
+    printf("Usage: %s [interface]\n", program_name);
+    printf("Show configuration of network interface(s)\n");
+    printf("\nOptions:\n");
+    printf("  interface    Show only specified interface\n");
+    printf("  (no args)    Show all interfaces\n");
+}
+
+int main(int argc, char *argv[]) {
+    // 도움말 옵션
+    if (argc > 1 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
+        print_usage(argv[0]);
+        return 0;
+    }
+    
+    // 특정 인터페이스 지정
+    if (argc == 2) {
+        show_interface(argv[1]);
+    } 
+    // 모든 인터페이스 출력
+    else if (argc == 1) {
+        show_interface(NULL);
+    } 
+    // 잘못된 인자
+    else {
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    return 0;
+}
+```
+
+## wget (간략화): 웹에서 파일 다운로드 (HTTP/HTTPS 지원) 
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <ctype.h>
+#include <time.h>
+
+#define BUFFER_SIZE 8192
+#define MAX_URL_SIZE 2048
+#define MAX_HEADER_SIZE 4096
+#define HTTP_PORT 80
+#define HTTPS_PORT 443
+
+typedef struct {
+    char protocol[10];
+    char hostname[256];
+    int port;
+    char path[1024];
+} url_info_t;
+
+typedef struct {
+    long content_length;
+    int status_code;
+    char filename[256];
+    char content_type[128];
+    int chunked;
+} http_response_t;
+
+// URL 파싱
+int parse_url(const char *url, url_info_t *info) {
+    const char *ptr = url;
+    
+    // 프로토콜 추출
+    if (strncmp(ptr, "http://", 7) == 0) {
+        strcpy(info->protocol, "http");
+        info->port = HTTP_PORT;
+        ptr += 7;
+    } else if (strncmp(ptr, "https://", 8) == 0) {
+        strcpy(info->protocol, "https");
+        info->port = HTTPS_PORT;
+        ptr += 8;
+    } else {
+        // 프로토콜이 없으면 http로 가정
+        strcpy(info->protocol, "http");
+        info->port = HTTP_PORT;
+    }
+    
+    // 호스트명과 포트 추출
+    const char *slash = strchr(ptr, '/');
+    const char *colon = strchr(ptr, ':');
+    
+    if (colon && (slash == NULL || colon < slash)) {
+        // 포트가 지정된 경우
+        int hostname_len = colon - ptr;
+        strncpy(info->hostname, ptr, hostname_len);
+        info->hostname[hostname_len] = '\0';
+        
+        info->port = atoi(colon + 1);
+        ptr = slash ? slash : ptr + strlen(ptr);
+    } else {
+        // 포트가 지정되지 않은 경우
+        int hostname_len = slash ? (slash - ptr) : strlen(ptr);
+        strncpy(info->hostname, ptr, hostname_len);
+        info->hostname[hostname_len] = '\0';
+        ptr = slash ? slash : ptr + strlen(ptr);
+    }
+    
+    // 경로 추출
+    if (*ptr == '\0') {
+        strcpy(info->path, "/");
+    } else {
+        strcpy(info->path, ptr);
+    }
+    
+    return 0;
+}
+
+// 파일명 추출
+void extract_filename(const char *url, const char *path, char *filename) {
+    const char *last_slash = strrchr(path, '/');
+    if (last_slash && strlen(last_slash + 1) > 0) {
+        strcpy(filename, last_slash + 1);
+    } else {
+        // URL에서 호스트명 추출하여 기본 파일명으로 사용
+        const char *host_start = strstr(url, "://");
+        if (host_start) {
+            host_start += 3;
+            const char *host_end = strchr(host_start, '/');
+            if (host_end) {
+                int len = host_end - host_start;
+                strncpy(filename, host_start, len);
+                filename[len] = '\0';
+            } else {
+                strcpy(filename, host_start);
+            }
+        } else {
+            strcpy(filename, "index.html");
+        }
+    }
+}
+
+// 소켓 연결
+int connect_to_server(const char *hostname, int port) {
+    struct sockaddr_in server_addr;
+    struct hostent *server;
+    int sockfd;
+    
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("socket");
+        return -1;
+    }
+    
+    server = gethostbyname(hostname);
+    if (server == NULL) {
+        fprintf(stderr, "Host not found: %s\n", hostname);
+        close(sockfd);
+        return -1;
+    }
+    
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    memcpy(&server_addr.sin_addr.s_addr, server->h_addr, server->h_length);
+    
+    if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("connect");
+        close(sockfd);
+        return -1;
+    }
+    
+    return sockfd;
+}
+
+// HTTP 헤더 파싱
+void parse_http_response(const char *response, http_response_t *info) {
+    char *line, *response_copy;
+    char *saveptr;
+    
+    response_copy = strdup(response);
+    
+    // 첫 번째 줄에서 상태 코드 추출
+    line = strtok_r(response_copy, "\r\n", &saveptr);
+    if (line && strncmp(line, "HTTP/", 5) == 0) {
+        sscanf(line, "HTTP/%*s %d", &info->status_code);
+    }
+    
+    // 나머지 헤더 파싱
+    while ((line = strtok_r(NULL, "\r\n", &saveptr)) != NULL) {
+        if (strncasecmp(line, "Content-Length:", 15) == 0) {
+            info->content_length = atol(line + 15);
+        } else if (strncasecmp(line, "Content-Type:", 13) == 0) {
+            sscanf(line + 13, "%127s", info->content_type);
+        } else if (strncasecmp(line, "Transfer-Encoding:", 18) == 0) {
+            if (strstr(line + 18, "chunked")) {
+                info->chunked = 1;
+            }
+        }
+    }
+    
+    free(response_copy);
+}
+
+// 청크 데이터 디코딩
+int decode_chunked_data(const char *data, int data_len, char *output, int output_size) {
+    int i = 0, output_len = 0;
+    
+    while (i < data_len && output_len < output_size - 1) {
+        // 청크 크기 읽기
+        char chunk_size_str[16] = {0};
+        int j = 0;
+        
+        while (i < data_len && data[i] != '\r' && j < 15) {
+            chunk_size_str[j++] = data[i++];
+        }
+        
+        if (i >= data_len - 1) break;
+        
+        // \r\n 건너뛰기
+        i += 2;
+        
+        int chunk_size = strtol(chunk_size_str, NULL, 16);
+        if (chunk_size == 0) break; // 마지막 청크
+        
+        // 청크 데이터 복사
+        int copy_len = (chunk_size < output_size - output_len - 1) ? 
+                       chunk_size : output_size - output_len - 1;
+        memcpy(output + output_len, data + i, copy_len);
+        output_len += copy_len;
+        i += chunk_size + 2; // 청크 데이터 + \r\n
+    }
+    
+    return output_len;
+}
+
+// 진행률 표시
+void show_progress(long downloaded, long total, time_t start_time) {
+    time_t current_time = time(NULL);
+    double elapsed = difftime(current_time, start_time);
+    
+    if (total > 0) {
+        int percent = (int)((downloaded * 100) / total);
+        double speed = downloaded / (elapsed > 0 ? elapsed : 1);
+        
+        printf("\r%ld/%ld bytes (%d%%) downloaded at %.1f KB/s", 
+               downloaded, total, percent, speed / 1024);
+    } else {
+        double speed = downloaded / (elapsed > 0 ? elapsed : 1);
+        printf("\r%ld bytes downloaded at %.1f KB/s", downloaded, speed / 1024);
+    }
+    fflush(stdout);
+}
+
+// HTTP 다운로드
+int download_http(const url_info_t *url_info, const char *output_filename) {
+    int sockfd;
+    char request[1024];
+    char buffer[BUFFER_SIZE];
+    char header_buffer[MAX_HEADER_SIZE];
+    FILE *output_file;
+    http_response_t response_info = {0};
+    long downloaded = 0;
+    int header_received = 0;
+    int header_len = 0;
+    time_t start_time;
+    
+    printf("Connecting to %s:%d...\n", url_info->hostname, url_info->port);
+    
+    sockfd = connect_to_server(url_info->hostname, url_info->port);
+    if (sockfd < 0) {
+        return -1;
+    }
+    
+    printf("Connected.\n");
+    
+    // HTTP 요청 생성
+    snprintf(request, sizeof(request),
+             "GET %s HTTP/1.1\r\n"
+             "Host: %s\r\n"
+             "User-Agent: wget/1.0\r\n"
+             "Connection: close\r\n"
+             "\r\n",
+             url_info->path, url_info->hostname);
+    
+    // 요청 전송
+    if (send(sockfd, request, strlen(request), 0) < 0) {
+        perror("send");
+        close(sockfd);
+        return -1;
+    }
+    
+    printf("HTTP request sent, awaiting response...\n");
+    
+    // 출력 파일 열기
+    output_file = fopen(output_filename, "wb");
+    if (!output_file) {
+        perror("fopen");
+        close(sockfd);
+        return -1;
+    }
+    
+    start_time = time(NULL);
+    
+    // 응답 수신
+    while (1) {
+        int bytes_received = recv(sockfd, buffer, BUFFER_SIZE - 1, 0);
+        if (bytes_received <= 0) break;
+        
+        buffer[bytes_received] = '\0';
+        
+        if (!header_received) {
+            // 헤더와 바디를 분리
+            int copy_len = (header_len + bytes_received < MAX_HEADER_SIZE - 1) ?
+                          bytes_received : MAX_HEADER_SIZE - 1 - header_len;
+            memcpy(header_buffer + header_len, buffer, copy_len);
+            header_len += copy_len;
+            header_buffer[header_len] = '\0';
+            
+            char *header_end = strstr(header_buffer, "\r\n\r\n");
+            if (header_end) {
+                header_received = 1;
+                parse_http_response(header_buffer, &response_info);
+                
+                printf("Response: %d\n", response_info.status_code);
+                if (response_info.content_length > 0) {
+                    printf("Length: %ld bytes\n", response_info.content_length);
+                }
+                printf("Saving to: %s\n\n", output_filename);
+                
+                if (response_info.status_code != 200) {
+                    printf("HTTP Error: %d\n", response_info.status_code);
+                    fclose(output_file);
+                    close(sockfd);
+                    unlink(output_filename);
+                    return -1;
+                }
+                
+                // 헤더 이후의 데이터 처리
+                int body_start = (header_end - header_buffer) + 4;
+                int remaining_data = header_len - body_start;
+                if (remaining_data > 0) {
+                    fwrite(header_buffer + body_start, 1, remaining_data, output_file);
+                    downloaded += remaining_data;
+                }
+            }
+        } else {
+            // 바디 데이터 저장
+            fwrite(buffer, 1, bytes_received, output_file);
+            downloaded += bytes_received;
+        }
+        
+        if (header_received) {
+            show_progress(downloaded, response_info.content_length, start_time);
+        }
+    }
+    
+    printf("\n\nDownload completed: %s (%ld bytes)\n", output_filename, downloaded);
+    
+    fclose(output_file);
+    close(sockfd);
+    return 0;
+}
+
+// HTTPS 다운로드
+int download_https(const url_info_t *url_info, const char *output_filename) {
+    int sockfd;
+    SSL_CTX *ctx;
+    SSL *ssl;
+    char request[1024];
+    char buffer[BUFFER_SIZE];
+    char header_buffer[MAX_HEADER_SIZE];
+    FILE *output_file;
+    http_response_t response_info = {0};
+    long downloaded = 0;
+    int header_received = 0;
+    int header_len = 0;
+    time_t start_time;
+    
+    // SSL 초기화
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+    
+    ctx = SSL_CTX_new(TLS_client_method());
+    if (!ctx) {
+        ERR_print_errors_fp(stderr);
+        return -1;
+    }
+    
+    printf("Connecting to %s:%d...\n", url_info->hostname, url_info->port);
+    
+    sockfd = connect_to_server(url_info->hostname, url_info->port);
+    if (sockfd < 0) {
+        SSL_CTX_free(ctx);
+        return -1;
+    }
+    
+    ssl = SSL_new(ctx);
+    SSL_set_fd(ssl, sockfd);
+    
+    if (SSL_connect(ssl) != 1) {
+        ERR_print_errors_fp(stderr);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        close(sockfd);
+        return -1;
+    }
+    
+    printf("SSL connection established.\n");
+    
+    // HTTPS 요청 생성
+    snprintf(request, sizeof(request),
+             "GET %s HTTP/1.1\r\n"
+             "Host: %s\r\n"
+             "User-Agent: wget/1.0\r\n"
+             "Connection: close\r\n"
+             "\r\n",
+             url_info->path, url_info->hostname);
+    
+    // 요청 전송
+    if (SSL_write(ssl, request, strlen(request)) < 0) {
+        ERR_print_errors_fp(stderr);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        close(sockfd);
+        return -1;
+    }
+    
+    printf("HTTPS request sent, awaiting response...\n");
+    
+    // 출력 파일 열기
+    output_file = fopen(output_filename, "wb");
+    if (!output_file) {
+        perror("fopen");
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        close(sockfd);
+        return -1;
+    }
+    
+    start_time = time(NULL);
+    
+    // 응답 수신
+    while (1) {
+        int bytes_received = SSL_read(ssl, buffer, BUFFER_SIZE - 1);
+        if (bytes_received <= 0) break;
+        
+        buffer[bytes_received] = '\0';
+        
+        if (!header_received) {
+            // 헤더와 바디를 분리
+            int copy_len = (header_len + bytes_received < MAX_HEADER_SIZE - 1) ?
+                          bytes_received : MAX_HEADER_SIZE - 1 - header_len;
+            memcpy(header_buffer + header_len, buffer, copy_len);
+            header_len += copy_len;
+            header_buffer[header_len] = '\0';
+            
+            char *header_end = strstr(header_buffer, "\r\n\r\n");
+            if (header_end) {
+                header_received = 1;
+                parse_http_response(header_buffer, &response_info);
+                
+                printf("Response: %d\n", response_info.status_code);
+                if (response_info.content_length > 0) {
+                    printf("Length: %ld bytes\n", response_info.content_length);
+                }
+                printf("Saving to: %s\n\n", output_filename);
+                
+                if (response_info.status_code != 200) {
+                    printf("HTTP Error: %d\n", response_info.status_code);
+                    fclose(output_file);
+                    SSL_free(ssl);
+                    SSL_CTX_free(ctx);
+                    close(sockfd);
+                    unlink(output_filename);
+                    return -1;
+                }
+                
+                // 헤더 이후의 데이터 처리
+                int body_start = (header_end - header_buffer) + 4;
+                int remaining_data = header_len - body_start;
+                if (remaining_data > 0) {
+                    fwrite(header_buffer + body_start, 1, remaining_data, output_file);
+                    downloaded += remaining_data;
+                }
+            }
+        } else {
+            // 바디 데이터 저장
+            fwrite(buffer, 1, bytes_received, output_file);
+            downloaded += bytes_received;
+        }
+        
+        if (header_received) {
+            show_progress(downloaded, response_info.content_length, start_time);
+        }
+    }
+    
+    printf("\n\nDownload completed: %s (%ld bytes)\n", output_filename, downloaded);
+    
+    fclose(output_file);
+    SSL_free(ssl);
+    SSL_CTX_free(ctx);
+    close(sockfd);
+    return 0;
+}
+
+// 사용법 출력
+void print_usage(const char *program_name) {
+    printf("Usage: %s [OPTION]... [URL]...\n", program_name);
+    printf("Download files from web servers via HTTP/HTTPS.\n\n");
+    printf("Options:\n");
+    printf("  -O file    save document to file\n");
+    printf("  -h, --help display this help and exit\n");
+    printf("\nExamples:\n");
+    printf("  %s http://example.com/file.txt\n", program_name);
+    printf("  %s -O myfile.txt https://example.com/file.txt\n", program_name);
+}
+
+int main(int argc, char *argv[]) {
+    char *url = NULL;
+    char *output_filename = NULL;
+    char default_filename[256];
+    url_info_t url_info;
+    int i;
+    
+    // 인자 파싱
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        } else if (strcmp(argv[i], "-O") == 0 && i + 1 < argc) {
+            output_filename = argv[++i];
+        } else if (argv[i][0] != '-') {
+            url = argv[i];
+        }
+    }
+    
+    if (!url) {
+        printf("Error: No URL specified\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    // URL 파싱
+    if (parse_url(url, &url_info) != 0) {
+        printf("Error: Invalid URL format\n");
+        return 1;
+    }
+    
+    // 출력 파일명 결정
+    if (!output_filename) {
+        extract_filename(url, url_info.path, default_filename);
+        output_filename = default_filename;
+    }
+    
+    printf("URL: %s\n", url);
+    printf("Protocol: %s\n", url_info.protocol);
+    printf("Host: %s\n", url_info.hostname);
+    printf("Port: %d\n", url_info.port);
+    printf("Path: %s\n", url_info.path);
+    printf("Output: %s\n\n", output_filename);
+    
+    // 프로토콜에 따라 다운로드
+    if (strcmp(url_info.protocol, "https") == 0) {
+        return download_https(&url_info, output_filename);
+    } else {
+        return download_http(&url_info, output_filename);
+    }
+}
+```
+
+## curl (간략화): URL로부터 데이터 전송 (HTTP/HTTPS 지원)
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <ctype.h>
+#include <time.h>
+
+#define BUFFER_SIZE 8192
+#define MAX_URL_SIZE 2048
+#define MAX_HEADER_SIZE 4096
+#define MAX_HEADERS 50
+#define HTTP_PORT 80
+#define HTTPS_PORT 443
+
+typedef struct {
+    char protocol[10];
+    char hostname[256];
+    int port;
+    char path[1024];
+} url_info_t;
+
+typedef struct {
+    long content_length;
+    int status_code;
+    char status_text[128];
+    char content_type[128];
+    int chunked;
+    char location[512];  // 리다이렉션용
+} http_response_t;
+
+typedef struct {
+    char method[16];
+    char *data;
+    char *headers[MAX_HEADERS];
+    int header_count;
+    char *output_file;
+    int include_headers;
+    int verbose;
+    int silent;
+    int follow_redirects;
+    int max_redirects;
+    char *user_agent;
+} curl_options_t;
+
+// URL 파싱
+int parse_url(const char *url, url_info_t *info) {
+    const char *ptr = url;
+    
+    // 프로토콜 추출
+    if (strncmp(ptr, "http://", 7) == 0) {
+        strcpy(info->protocol, "http");
+        info->port = HTTP_PORT;
+        ptr += 7;
+    } else if (strncmp(ptr, "https://", 8) == 0) {
+        strcpy(info->protocol, "https");
+        info->port = HTTPS_PORT;
+        ptr += 8;
+    } else {
+        strcpy(info->protocol, "http");
+        info->port = HTTP_PORT;
+    }
+    
+    // 호스트명과 포트 추출
+    const char *slash = strchr(ptr, '/');
+    const char *colon = strchr(ptr, ':');
+    
+    if (colon && (slash == NULL || colon < slash)) {
+        int hostname_len = colon - ptr;
+        strncpy(info->hostname, ptr, hostname_len);
+        info->hostname[hostname_len] = '\0';
+        
+        info->port = atoi(colon + 1);
+        ptr = slash ? slash : ptr + strlen(ptr);
+    } else {
+        int hostname_len = slash ? (slash - ptr) : strlen(ptr);
+        strncpy(info->hostname, ptr, hostname_len);
+        info->hostname[hostname_len] = '\0';
+        ptr = slash ? slash : ptr + strlen(ptr);
+    }
+    
+    // 경로 추출
+    if (*ptr == '\0') {
+        strcpy(info->path, "/");
+    } else {
+        strcpy(info->path, ptr);
+    }
+    
+    return 0;
+}
+
+// 소켓 연결
+int connect_to_server(const char *hostname, int port) {
+    struct sockaddr_in server_addr;
+    struct hostent *server;
+    int sockfd;
+    
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("socket");
+        return -1;
+    }
+    
+    server = gethostbyname(hostname);
+    if (server == NULL) {
+        fprintf(stderr, "Host not found: %s\n", hostname);
+        close(sockfd);
+        return -1;
+    }
+    
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    memcpy(&server_addr.sin_addr.s_addr, server->h_addr, server->h_length);
+    
+    if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("connect");
+        close(sockfd);
+        return -1;
+    }
+    
+    return sockfd;
+}
+
+// HTTP 응답 파싱
+void parse_http_response(const char *response, http_response_t *info) {
+    char *line, *response_copy;
+    char *saveptr;
+    
+    response_copy = strdup(response);
+    
+    // 첫 번째 줄에서 상태 코드 추출
+    line = strtok_r(response_copy, "\r\n", &saveptr);
+    if (line && strncmp(line, "HTTP/", 5) == 0) {
+        sscanf(line, "HTTP/%*s %d %127[^\r\n]", &info->status_code, info->status_text);
+    }
+    
+    // 나머지 헤더 파싱
+    while ((line = strtok_r(NULL, "\r\n", &saveptr)) != NULL) {
+        if (strncasecmp(line, "Content-Length:", 15) == 0) {
+            info->content_length = atol(line + 15);
+        } else if (strncasecmp(line, "Content-Type:", 13) == 0) {
+            sscanf(line + 13, " %127[^\r\n]", info->content_type);
+        } else if (strncasecmp(line, "Transfer-Encoding:", 18) == 0) {
+            if (strstr(line + 18, "chunked")) {
+                info->chunked = 1;
+            }
+        } else if (strncasecmp(line, "Location:", 9) == 0) {
+            sscanf(line + 9, " %511[^\r\n]", info->location);
+        }
+    }
+    
+    free(response_copy);
+}
+
+// HTTP 요청 생성
+void build_http_request(const url_info_t *url_info, const curl_options_t *opts, char *request, size_t size) {
+    int len = 0;
+    
+    // 요청 라인
+    len += snprintf(request + len, size - len, "%s %s HTTP/1.1\r\n", opts->method, url_info->path);
+    
+    // 기본 헤더
+    len += snprintf(request + len, size - len, "Host: %s\r\n", url_info->hostname);
+    
+    // User-Agent
+    if (opts->user_agent) {
+        len += snprintf(request + len, size - len, "User-Agent: %s\r\n", opts->user_agent);
+    } else {
+        len += snprintf(request + len, size - len, "User-Agent: curl/1.0\r\n");
+    }
+    
+    // 사용자 정의 헤더
+    for (int i = 0; i < opts->header_count; i++) {
+        len += snprintf(request + len, size - len, "%s\r\n", opts->headers[i]);
+    }
+    
+    // POST 데이터가 있는 경우
+    if (opts->data) {
+        len += snprintf(request + len, size - len, "Content-Type: application/x-www-form-urlencoded\r\n");
+        len += snprintf(request + len, size - len, "Content-Length: %zu\r\n", strlen(opts->data));
+    }
+    
+    len += snprintf(request + len, size - len, "Connection: close\r\n");
+    len += snprintf(request + len, size - len, "\r\n");
+    
+    // POST 데이터 추가
+    if (opts->data) {
+        len += snprintf(request + len, size - len, "%s", opts->data);
+    }
+}
+
+// HTTP 요청 처리
+int process_http_request(const url_info_t *url_info, const curl_options_t *opts, FILE *output) {
+    int sockfd;
+    char request[4096];
+    char buffer[BUFFER_SIZE];
+    char header_buffer[MAX_HEADER_SIZE];
+    http_response_t response_info = {0};
+    int header_received = 0;
+    int header_len = 0;
+    
+    if (opts->verbose) {
+        printf("* Connecting to %s:%d...\n", url_info->hostname, url_info->port);
+    }
+    
+    sockfd = connect_to_server(url_info->hostname, url_info->port);
+    if (sockfd < 0) {
+        return -1;
+    }
+    
+    if (opts->verbose) {
+        printf("* Connected to %s (%s) port %d\n", url_info->hostname, url_info->hostname, url_info->port);
+    }
+    
+    // HTTP 요청 생성
+    build_http_request(url_info, opts, request, sizeof(request));
+    
+    if (opts->verbose) {
+        printf("> %s", request);
+    }
+    
+    // 요청 전송
+    if (send(sockfd, request, strlen(request), 0) < 0) {
+        perror("send");
+        close(sockfd);
+        return -1;
+    }
+    
+    // 응답 수신
+    while (1) {
+        int bytes_received = recv(sockfd, buffer, BUFFER_SIZE - 1, 0);
+        if (bytes_received <= 0) break;
+        
+        buffer[bytes_received] = '\0';
+        
+        if (!header_received) {
+            // 헤더와 바디를 분리
+            int copy_len = (header_len + bytes_received < MAX_HEADER_SIZE - 1) ?
+                          bytes_received : MAX_HEADER_SIZE - 1 - header_len;
+            memcpy(header_buffer + header_len, buffer, copy_len);
+            header_len += copy_len;
+            header_buffer[header_len] = '\0';
+            
+            char *header_end = strstr(header_buffer, "\r\n\r\n");
+            if (header_end) {
+                header_received = 1;
+                parse_http_response(header_buffer, &response_info);
+                
+                if (opts->verbose) {
+                    printf("< HTTP/1.1 %d %s\n", response_info.status_code, response_info.status_text);
+                    
+                    // 헤더 출력
+                    char *line, *header_copy = strdup(header_buffer);
+                    char *saveptr;
+                    strtok_r(header_copy, "\r\n", &saveptr); // 첫 번째 줄 건너뛰기
+                    while ((line = strtok_r(NULL, "\r\n", &saveptr)) != NULL) {
+                        if (strlen(line) > 0) {
+                            printf("< %s\n", line);
+                        }
+                    }
+                    free(header_copy);
+                    printf("< \n");
+                }
+                
+                // 헤더 포함 옵션
+                if (opts->include_headers) {
+                    int header_only_len = (header_end - header_buffer) + 4;
+                    fwrite(header_buffer, 1, header_only_len, output);
+                }
+                
+                // 헤더 이후의 데이터 처리
+                int body_start = (header_end - header_buffer) + 4;
+                int remaining_data = header_len - body_start;
+                if (remaining_data > 0) {
+                    fwrite(header_buffer + body_start, 1, remaining_data, output);
+                }
+            }
+        } else {
+            // 바디 데이터 출력
+            fwrite(buffer, 1, bytes_received, output);
+        }
+    }
+    
+    close(sockfd);
+    
+    // 리다이렉션 처리
+    if (opts->follow_redirects && (response_info.status_code == 301 || response_info.status_code == 302 || 
+        response_info.status_code == 303 || response_info.status_code == 307 || response_info.status_code == 308)) {
+        if (strlen(response_info.location) > 0) {
+            if (opts->verbose) {
+                printf("* Following redirect to %s\n", response_info.location);
+            }
+            url_info_t new_url;
+            parse_url(response_info.location, &new_url);
+            return process_http_request(&new_url, opts, output);
+        }
+    }
+    
+    return response_info.status_code;
+}
+
+// HTTPS 요청 처리
+int process_https_request(const url_info_t *url_info, const curl_options_t *opts, FILE *output) {
+    int sockfd;
+    SSL_CTX *ctx;
+    SSL *ssl;
+    char request[4096];
+    char buffer[BUFFER_SIZE];
+    char header_buffer[MAX_HEADER_SIZE];
+    http_response_t response_info = {0};
+    int header_received = 0;
+    int header_len = 0;
+    
+    // SSL 초기화
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+    
+    ctx = SSL_CTX_new(TLS_client_method());
+    if (!ctx) {
+        ERR_print_errors_fp(stderr);
+        return -1;
+    }
+    
+    if (opts->verbose) {
+        printf("* Connecting to %s:%d...\n", url_info->hostname, url_info->port);
+    }
+    
+    sockfd = connect_to_server(url_info->hostname, url_info->port);
+    if (sockfd < 0) {
+        SSL_CTX_free(ctx);
+        return -1;
+    }
+    
+    ssl = SSL_new(ctx);
+    SSL_set_fd(ssl, sockfd);
+    
+    if (SSL_connect(ssl) != 1) {
+        ERR_print_errors_fp(stderr);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        close(sockfd);
+        return -1;
+    }
+    
+    if (opts->verbose) {
+        printf("* SSL connection established\n");
+    }
+    
+    // HTTPS 요청 생성
+    build_http_request(url_info, opts, request, sizeof(request));
+    
+    if (opts->verbose) {
+        printf("> %s", request);
+    }
+    
+    // 요청 전송
+    if (SSL_write(ssl, request, strlen(request)) < 0) {
+        ERR_print_errors_fp(stderr);
+        SSL_free(ssl);
+        SSL_CTX_free(ctx);
+        close(sockfd);
+        return -1;
+    }
+    
+    // 응답 수신
+    while (1) {
+        int bytes_received = SSL_read(ssl, buffer, BUFFER_SIZE - 1);
+        if (bytes_received <= 0) break;
+        
+        buffer[bytes_received] = '\0';
+        
+        if (!header_received) {
+            // 헤더와 바디를 분리
+            int copy_len = (header_len + bytes_received < MAX_HEADER_SIZE - 1) ?
+                          bytes_received : MAX_HEADER_SIZE - 1 - header_len;
+            memcpy(header_buffer + header_len, buffer, copy_len);
+            header_len += copy_len;
+            header_buffer[header_len] = '\0';
+            
+            char *header_end = strstr(header_buffer, "\r\n\r\n");
+            if (header_end) {
+                header_received = 1;
+                parse_http_response(header_buffer, &response_info);
+                
+                if (opts->verbose) {
+                    printf("< HTTP/1.1 %d %s\n", response_info.status_code, response_info.status_text);
+                    
+                    // 헤더 출력
+                    char *line, *header_copy = strdup(header_buffer);
+                    char *saveptr;
+                    strtok_r(header_copy, "\r\n", &saveptr); // 첫 번째 줄 건너뛰기
+                    while ((line = strtok_r(NULL, "\r\n", &saveptr)) != NULL) {
+                        if (strlen(line) > 0) {
+                            printf("< %s\n", line);
+                        }
+                    }
+                    free(header_copy);
+                    printf("< \n");
+                }
+                
+                // 헤더 포함 옵션
+                if (opts->include_headers) {
+                    int header_only_len = (header_end - header_buffer) + 4;
+                    fwrite(header_buffer, 1, header_only_len, output);
+                }
+                
+                // 헤더 이후의 데이터 처리
+                int body_start = (header_end - header_buffer) + 4;
+                int remaining_data = header_len - body_start;
+                if (remaining_data > 0) {
+                    fwrite(header_buffer + body_start, 1, remaining_data, output);
+                }
+            }
+        } else {
+            // 바디 데이터 출력
+            fwrite(buffer, 1, bytes_received, output);
+        }
+    }
+    
+    SSL_free(ssl);
+    SSL_CTX_free(ctx);
+    close(sockfd);
+    
+    // 리다이렉션 처리
+    if (opts->follow_redirects && (response_info.status_code == 301 || response_info.status_code == 302 || 
+        response_info.status_code == 303 || response_info.status_code == 307 || response_info.status_code == 308)) {
+        if (strlen(response_info.location) > 0) {
+            if (opts->verbose) {
+                printf("* Following redirect to %s\n", response_info.location);
+            }
+            url_info_t new_url;
+            parse_url(response_info.location, &new_url);
+            if (strcmp(new_url.protocol, "https") == 0) {
+                return process_https_request(&new_url, opts, output);
+            } else {
+                return process_http_request(&new_url, opts, output);
+            }
+        }
+    }
+    
+    return response_info.status_code;
+}
+
+// 사용법 출력
+void print_usage(const char *program_name) {
+    printf("Usage: %s [options...] <url>\n", program_name);
+    printf("Transfer data from or to a server\n\n");
+    printf("Options:\n");
+    printf("  -X, --request <method>     HTTP method (GET, POST, PUT, DELETE, etc.)\n");
+    printf("  -d, --data <data>          HTTP POST data\n");
+    printf("  -H, --header <header>      Custom header to pass to server\n");
+    printf("  -o, --output <file>        Write output to file instead of stdout\n");
+    printf("  -i, --include              Include HTTP headers in output\n");
+    printf("  -v, --verbose              Make the operation more talkative\n");
+    printf("  -s, --silent               Silent mode\n");
+    printf("  -L, --location             Follow redirects\n");
+    printf("  -A, --user-agent <agent>   User-Agent to send to server\n");
+    printf("  -h, --help                 Display this help and exit\n");
+    printf("\nExamples:\n");
+    printf("  %s http://example.com\n", program_name);
+    printf("  %s -X POST -d \"name=value\" http://example.com/api\n", program_name);
+    printf("  %s -H \"Authorization: Bearer token\" https://api.example.com\n", program_name);
+    printf("  %s -o output.html -L http://example.com\n", program_name);
+}
+
+int main(int argc, char *argv[]) {
+    char *url = NULL;
+    curl_options_t opts = {0};
+    url_info_t url_info;
+    FILE *output = stdout;
+    int result;
+    
+    // 기본값 설정
+    strcpy(opts.method, "GET");
+    opts.follow_redirects = 0;
+    opts.max_redirects = 10;
+    
+    // 인자 파싱
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        } else if ((strcmp(argv[i], "-X") == 0 || strcmp(argv[i], "--request") == 0) && i + 1 < argc) {
+            strncpy(opts.method, argv[++i], sizeof(opts.method) - 1);
+        } else if ((strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--data") == 0) && i + 1 < argc) {
+            opts.data = argv[++i];
+            if (strcmp(opts.method, "GET") == 0) {
+                strcpy(opts.method, "POST");
+            }
+        } else if ((strcmp(argv[i], "-H") == 0 || strcmp(argv[i], "--header") == 0) && i + 1 < argc) {
+            if (opts.header_count < MAX_HEADERS) {
+                opts.headers[opts.header_count++] = argv[++i];
+            }
+        } else if ((strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) && i + 1 < argc) {
+            opts.output_file = argv[++i];
+        } else if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--include") == 0) {
+            opts.include_headers = 1;
+        } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
+            opts.verbose = 1;
+        } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--silent") == 0) {
+            opts.silent = 1;
+        } else if (strcmp(argv[i], "-L") == 0 || strcmp(argv[i], "--location") == 0) {
+            opts.follow_redirects = 1;
+        } else if ((strcmp(argv[i], "-A") == 0 || strcmp(argv[i], "--user-agent") == 0) && i + 1 < argc) {
+            opts.user_agent = argv[++i];
+        } else if (argv[i][0] != '-') {
+            url = argv[i];
+        }
+    }
+    
+    if (!url) {
+        fprintf(stderr, "Error: No URL specified\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    // URL 파싱
+    if (parse_url(url, &url_info) != 0) {
+        fprintf(stderr, "Error: Invalid URL format\n");
+        return 1;
+    }
+    
+    // 출력 파일 열기
+    if (opts.output_file) {
+        output = fopen(opts.output_file, "wb");
+        if (!output) {
+            perror("fopen");
+            return 1;
+        }
+    }
+    
+    // 요청 처리
+    if (strcmp(url_info.protocol, "https") == 0) {
+        result = process_https_request(&url_info, &opts, output);
+    } else {
+        result = process_http_request(&url_info, &opts, output);
+    }
+    
+    if (output != stdout) {
+        fclose(output);
+    }
+    
+    if (!opts.silent && opts.verbose) {
+        printf("* Request completed with status code: %d\n", result);
+    }
+    
+    return (result >= 200 && result < 300) ? 0 : 1;
+}
+```
+
+# V. 입출력 재지향 및 파이프 (Redirection and Pipes)
+
+## >: 표준 출력 파일로 재지향 (덮어쓰기)
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+
+#define MAX_CMD_LEN 1024
+#define MAX_ARGS 64
+
+// 명령어를 파싱하여 인자 배열로 변환
+int parse_command(char *cmd, char **args) {
+    int argc = 0;
+    char *token = strtok(cmd, " \t\n");
+    
+    while (token != NULL && argc < MAX_ARGS - 1) {
+        args[argc] = token;
+        argc++;
+        token = strtok(NULL, " \t\n");
+    }
+    args[argc] = NULL;
+    return argc;
+}
+
+// 리다이렉션 처리 함수
+int handle_redirection(char **args, int argc) {
+    int i;
+    char *output_file = NULL;
+    
+    // '>' 기호를 찾아서 출력 파일명 확인
+    for (i = 0; i < argc; i++) {
+        if (strcmp(args[i], ">") == 0) {
+            if (i + 1 < argc) {
+                output_file = args[i + 1];
+                args[i] = NULL;  // '>' 기호 제거
+                break;
+            } else {
+                printf("오류: '>' 뒤에 파일명이 없습니다.\n");
+                return -1;
+            }
+        }
+    }
+    
+    // 리다이렉션이 있는 경우
+    if (output_file != NULL) {
+        int fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd == -1) {
+            perror("파일 열기 오류");
+            return -1;
+        }
+        
+        // 표준 출력을 파일로 리다이렉션
+        if (dup2(fd, STDOUT_FILENO) == -1) {
+            perror("리다이렉션 오류");
+            close(fd);
+            return -1;
+        }
+        close(fd);
+    }
+    
+    return 0;
+}
+
+// 명령어 실행 함수
+void execute_command(char **args, int argc) {
+    pid_t pid = fork();
+    
+    if (pid == 0) {  // 자식 프로세스
+        // 리다이렉션 처리
+        if (handle_redirection(args, argc) == -1) {
+            exit(1);
+        }
+        
+        // 명령어 실행
+        if (execvp(args[0], args) == -1) {
+            perror("명령어 실행 오류");
+            exit(1);
+        }
+    } else if (pid > 0) {  // 부모 프로세스
+        int status;
+        waitpid(pid, &status, 0);
+    } else {
+        perror("fork 오류");
+    }
+}
+
+// 내장 명령어 처리
+int handle_builtin(char **args, int argc) {
+    if (argc == 0) return 0;
+    
+    // exit 명령어
+    if (strcmp(args[0], "exit") == 0) {
+        printf("터미널을 종료합니다.\n");
+        exit(0);
+    }
+    
+    // cd 명령어
+    if (strcmp(args[0], "cd") == 0) {
+        if (argc < 2) {
+            printf("사용법: cd <디렉토리>\n");
+        } else {
+            if (chdir(args[1]) != 0) {
+                perror("디렉토리 변경 오류");
+            }
+        }
+        return 1;
+    }
+    
+    return 0;  // 내장 명령어가 아님
+}
+
+int main() {
+    char command[MAX_CMD_LEN];
+    char *args[MAX_ARGS];
+    int argc;
+    
+    printf("간단한 터미널 (리다이렉션 지원)\n");
+    printf("종료하려면 'exit'를 입력하세요.\n\n");
+    
+    while (1) {
+        printf("myshell> ");
+        fflush(stdout);
+        
+        // 명령어 입력받기
+        if (fgets(command, sizeof(command), stdin) == NULL) {
+            break;
+        }
+        
+        // 빈 명령어 처리
+        if (strlen(command) <= 1) {
+            continue;
+        }
+        
+        // 명령어 파싱
+        argc = parse_command(command, args);
+        if (argc == 0) continue;
+        
+        // 내장 명령어 처리
+        if (handle_builtin(args, argc)) {
+            continue;
+        }
+        
+        // 외부 명령어 실행
+        execute_command(args, argc);
+    }
+    
+    return 0;
+}
+```
+
+## >>: 표준 출력 파일로 재지향 (추가)
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+
+#define MAX_CMD_LEN 1024
+#define MAX_ARGS 64
+
+// 명령어를 파싱하여 인자 배열로 변환
+int parse_command(char *cmd, char **args) {
+    int argc = 0;
+    char *token = strtok(cmd, " \t\n");
+    
+    while (token != NULL && argc < MAX_ARGS - 1) {
+        args[argc] = token;
+        argc++;
+        token = strtok(NULL, " \t\n");
+    }
+    args[argc] = NULL;
+    return argc;
+}
+
+// 리다이렉션 처리 함수
+int handle_redirection(char **args, int argc) {
+    int i;
+    char *output_file = NULL;
+    int append_mode = 0;  // 추가 모드 플래그
+    
+    // '>>' 또는 '>' 기호를 찾아서 출력 파일명 확인
+    for (i = 0; i < argc; i++) {
+        if (strcmp(args[i], ">>") == 0) {
+            if (i + 1 < argc) {
+                output_file = args[i + 1];
+                append_mode = 1;  // 추가 모드 설정
+                args[i] = NULL;   // '>>' 기호 제거
+                break;
+            } else {
+                printf("오류: '>>' 뒤에 파일명이 없습니다.\n");
+                return -1;
+            }
+        } else if (strcmp(args[i], ">") == 0) {
+            if (i + 1 < argc) {
+                output_file = args[i + 1];
+                append_mode = 0;  // 덮어쓰기 모드 설정
+                args[i] = NULL;   // '>' 기호 제거
+                break;
+            } else {
+                printf("오류: '>' 뒤에 파일명이 없습니다.\n");
+                return -1;
+            }
+        }
+    }
+    
+    // 리다이렉션이 있는 경우
+    if (output_file != NULL) {
+        int fd;
+        if (append_mode) {
+            // 추가 모드: 파일 끝에 추가
+            fd = open(output_file, O_WRONLY | O_CREAT | O_APPEND, 0644);
+        } else {
+            // 덮어쓰기 모드: 파일 내용 덮어쓰기
+            fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        }
+        
+        if (fd == -1) {
+            perror("파일 열기 오류");
+            return -1;
+        }
+        
+        // 표준 출력을 파일로 리다이렉션
+        if (dup2(fd, STDOUT_FILENO) == -1) {
+            perror("리다이렉션 오류");
+            close(fd);
+            return -1;
+        }
+        close(fd);
+    }
+    
+    return 0;
+}
+
+// 명령어 실행 함수
+void execute_command(char **args, int argc) {
+    pid_t pid = fork();
+    
+    if (pid == 0) {  // 자식 프로세스
+        // 리다이렉션 처리
+        if (handle_redirection(args, argc) == -1) {
+            exit(1);
+        }
+        
+        // 명령어 실행
+        if (execvp(args[0], args) == -1) {
+            perror("명령어 실행 오류");
+            exit(1);
+        }
+    } else if (pid > 0) {  // 부모 프로세스
+        int status;
+        waitpid(pid, &status, 0);
+    } else {
+        perror("fork 오류");
+    }
+}
+
+// 내장 명령어 처리
+int handle_builtin(char **args, int argc) {
+    if (argc == 0) return 0;
+    
+    // exit 명령어
+    if (strcmp(args[0], "exit") == 0) {
+        printf("터미널을 종료합니다.\n");
+        exit(0);
+    }
+    
+    // cd 명령어
+    if (strcmp(args[0], "cd") == 0) {
+        if (argc < 2) {
+            printf("사용법: cd <디렉토리>\n");
+        } else {
+            if (chdir(args[1]) != 0) {
+                perror("디렉토리 변경 오류");
+            }
+        }
+        return 1;
+    }
+    
+    return 0;  // 내장 명령어가 아님
+}
+
+int main() {
+    char command[MAX_CMD_LEN];
+    char *args[MAX_ARGS];
+    int argc;
+    
+    printf("간단한 터미널 (리다이렉션 지원: > 및 >>)\n");
+    printf("종료하려면 'exit'를 입력하세요.\n\n");
+    
+    while (1) {
+        printf("myshell> ");
+        fflush(stdout);
+        
+        // 명령어 입력받기
+        if (fgets(command, sizeof(command), stdin) == NULL) {
+            break;
+        }
+        
+        // 빈 명령어 처리
+        if (strlen(command) <= 1) {
+            continue;
+        }
+        
+        // 명령어 파싱
+        argc = parse_command(command, args);
+        if (argc == 0) continue;
+        
+        // 내장 명령어 처리
+        if (handle_builtin(args, argc)) {
+            continue;
+        }
+        
+        // 외부 명령어 실행
+        execute_command(args, argc);
+    }
+    
+    return 0;
+}
+```
+
+## <: 표준 입력 파일로 재지향 
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+
+#define MAX_CMD_LEN 1024
+#define MAX_ARGS 64
+
+// 명령어를 파싱하여 인자 배열로 변환
+int parse_command(char *cmd, char **args) {
+    int argc = 0;
+    char *token = strtok(cmd, " \t\n");
+    
+    while (token != NULL && argc < MAX_ARGS - 1) {
+        args[argc] = token;
+        argc++;
+        token = strtok(NULL, " \t\n");
+    }
+    args[argc] = NULL;
+    return argc;
+}
+
+// 리다이렉션 처리 함수
+int handle_redirection(char **args, int argc) {
+    int i;
+    char *output_file = NULL;
+    char *input_file = NULL;
+    int append_mode = 0;  // 추가 모드 플래그
+    
+    // 리다이렉션 기호들을 찾아서 파일명 확인
+    for (i = 0; i < argc; i++) {
+        if (strcmp(args[i], ">>") == 0) {
+            if (i + 1 < argc) {
+                output_file = args[i + 1];
+                append_mode = 1;  // 추가 모드 설정
+                args[i] = NULL;   // '>>' 기호 제거
+                args[i + 1] = NULL; // 파일명도 제거
+                break;
+            } else {
+                printf("오류: '>>' 뒤에 파일명이 없습니다.\n");
+                return -1;
+            }
+        } else if (strcmp(args[i], ">") == 0) {
+            if (i + 1 < argc) {
+                output_file = args[i + 1];
+                append_mode = 0;  // 덮어쓰기 모드 설정
+                args[i] = NULL;   // '>' 기호 제거
+                args[i + 1] = NULL; // 파일명도 제거
+                break;
+            } else {
+                printf("오류: '>' 뒤에 파일명이 없습니다.\n");
+                return -1;
+            }
+        }
+    }
+    
+    // 입력 리다이렉션 찾기
+    for (i = 0; i < argc; i++) {
+        if (args[i] != NULL && strcmp(args[i], "<") == 0) {
+            if (i + 1 < argc) {
+                input_file = args[i + 1];
+                args[i] = NULL;     // '<' 기호 제거
+                args[i + 1] = NULL; // 파일명도 제거
+                break;
+            } else {
+                printf("오류: '<' 뒤에 파일명이 없습니다.\n");
+                return -1;
+            }
+        }
+    }
+    
+    // 입력 리다이렉션 처리
+    if (input_file != NULL) {
+        int fd = open(input_file, O_RDONLY);
+        if (fd == -1) {
+            perror("입력 파일 열기 오류");
+            return -1;
+        }
+        
+        // 표준 입력을 파일로 리다이렉션
+        if (dup2(fd, STDIN_FILENO) == -1) {
+            perror("입력 리다이렉션 오류");
+            close(fd);
+            return -1;
+        }
+        close(fd);
+    }
+    
+    // 출력 리다이렉션 처리
+    if (output_file != NULL) {
+        int fd;
+        if (append_mode) {
+            // 추가 모드: 파일 끝에 추가
+            fd = open(output_file, O_WRONLY | O_CREAT | O_APPEND, 0644);
+        } else {
+            // 덮어쓰기 모드: 파일 내용 덮어쓰기
+            fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        }
+        
+        if (fd == -1) {
+            perror("출력 파일 열기 오류");
+            return -1;
+        }
+        
+        // 표준 출력을 파일로 리다이렉션
+        if (dup2(fd, STDOUT_FILENO) == -1) {
+            perror("출력 리다이렉션 오류");
+            close(fd);
+            return -1;
+        }
+        close(fd);
+    }
+    
+    return 0;
+}
+
+// 명령어 실행 함수
+void execute_command(char **args, int argc) {
+    pid_t pid = fork();
+    
+    if (pid == 0) {  // 자식 프로세스
+        // 리다이렉션 처리
+        if (handle_redirection(args, argc) == -1) {
+            exit(1);
+        }
+        
+        // 명령어 실행
+        if (execvp(args[0], args) == -1) {
+            perror("명령어 실행 오류");
+            exit(1);
+        }
+    } else if (pid > 0) {  // 부모 프로세스
+        int status;
+        waitpid(pid, &status, 0);
+    } else {
+        perror("fork 오류");
+    }
+}
+
+// 내장 명령어 처리
+int handle_builtin(char **args, int argc) {
+    if (argc == 0) return 0;
+    
+    // exit 명령어
+    if (strcmp(args[0], "exit") == 0) {
+        printf("터미널을 종료합니다.\n");
+        exit(0);
+    }
+    
+    // cd 명령어
+    if (strcmp(args[0], "cd") == 0) {
+        if (argc < 2) {
+            printf("사용법: cd <디렉토리>\n");
+        } else {
+            if (chdir(args[1]) != 0) {
+                perror("디렉토리 변경 오류");
+            }
+        }
+        return 1;
+    }
+    
+    return 0;  // 내장 명령어가 아님
+}
+
+int main() {
+    char command[MAX_CMD_LEN];
+    char *args[MAX_ARGS];
+    int argc;
+    
+    printf("간단한 터미널 (리다이렉션 지원: >, >>, <)\n");
+    printf("종료하려면 'exit'를 입력하세요.\n\n");
+    
+    while (1) {
+        printf("myshell> ");
+        fflush(stdout);
+        
+        // 명령어 입력받기
+        if (fgets(command, sizeof(command), stdin) == NULL) {
+            break;
+        }
+        
+        // 빈 명령어 처리
+        if (strlen(command) <= 1) {
+            continue;
+        }
+        
+        // 명령어 파싱
+        argc = parse_command(command, args);
+        if (argc == 0) continue;
+        
+        // 내장 명령어 처리
+        if (handle_builtin(args, argc)) {
+            continue;
+        }
+        
+        // 외부 명령어 실행
+        execute_command(args, argc);
+    }
+    
+    return 0;
+}
+```
+
+## |: 파이프 (한 명령어의 출력을 다른 명령어의 입력으로)
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+
+#define MAX_CMD_LEN 1024
+#define MAX_ARGS 64
+#define MAX_PIPES 10
+
+// 파이프로 연결된 명령어들을 저장하는 구조체
+typedef struct {
+    char *args[MAX_ARGS];
+    int argc;
+} Command;
+
+// 명령어를 파싱하여 인자 배열로 변환
+int parse_command(char *cmd, char **args) {
+    int argc = 0;
+    char *token = strtok(cmd, " \t\n");
+    
+    while (token != NULL && argc < MAX_ARGS - 1) {
+        args[argc] = token;
+        argc++;
+        token = strtok(NULL, " \t\n");
+    }
+    args[argc] = NULL;
+    return argc;
+}
+
+// 파이프가 있는지 확인하고 명령어들을 분리
+int parse_pipes(char *cmd, Command *commands) {
+    int cmd_count = 0;
+    char *cmd_start = cmd;
+    char *pipe_pos;
+    
+    // 파이프 기호로 명령어 분리
+    while ((pipe_pos = strstr(cmd_start, "|")) != NULL && cmd_count < MAX_PIPES) {
+        *pipe_pos = '\0';  // 파이프 위치를 NULL로 변경
+        
+        // 현재 명령어 파싱
+        commands[cmd_count].argc = parse_command(cmd_start, commands[cmd_count].args);
+        if (commands[cmd_count].argc > 0) {
+            cmd_count++;
+        }
+        
+        cmd_start = pipe_pos + 1;  // 다음 명령어 시작점
+    }
+    
+    // 마지막 명령어 파싱
+    if (cmd_count < MAX_PIPES) {
+        commands[cmd_count].argc = parse_command(cmd_start, commands[cmd_count].args);
+        if (commands[cmd_count].argc > 0) {
+            cmd_count++;
+        }
+    }
+    
+    return cmd_count;
+}
+
+// 파이프 실행 함수
+void execute_pipes(Command *commands, int cmd_count) {
+    int pipes[MAX_PIPES - 1][2];  // 파이프 배열
+    pid_t pids[MAX_PIPES];        // 프로세스 ID 배열
+    int i;
+    
+    // 파이프 생성
+    for (i = 0; i < cmd_count - 1; i++) {
+        if (pipe(pipes[i]) == -1) {
+            perror("파이프 생성 오류");
+            return;
+        }
+    }
+    
+    // 각 명령어를 위한 프로세스 생성
+    for (i = 0; i < cmd_count; i++) {
+        pids[i] = fork();
+        
+        if (pids[i] == 0) {  // 자식 프로세스
+            // 첫 번째 명령어가 아닌 경우, 이전 파이프에서 입력 받기
+            if (i > 0) {
+                if (dup2(pipes[i-1][0], STDIN_FILENO) == -1) {
+                    perror("입력 파이프 연결 오류");
+                    exit(1);
+                }
+            }
+            
+            // 마지막 명령어가 아닌 경우, 다음 파이프로 출력 보내기
+            if (i < cmd_count - 1) {
+                if (dup2(pipes[i][1], STDOUT_FILENO) == -1) {
+                    perror("출력 파이프 연결 오류");
+                    exit(1);
+                }
+            }
+            
+            // 모든 파이프 닫기
+            int j;
+            for (j = 0; j < cmd_count - 1; j++) {
+                close(pipes[j][0]);
+                close(pipes[j][1]);
+            }
+            
+            // 명령어 실행
+            if (execvp(commands[i].args[0], commands[i].args) == -1) {
+                perror("명령어 실행 오류");
+                exit(1);
+            }
+        } else if (pids[i] == -1) {
+            perror("fork 오류");
+            return;
+        }
+    }
+    
+    // 부모 프로세스에서 모든 파이프 닫기
+    for (i = 0; i < cmd_count - 1; i++) {
+        close(pipes[i][0]);
+        close(pipes[i][1]);
+    }
+    
+    // 모든 자식 프로세스 대기
+    for (i = 0; i < cmd_count; i++) {
+        int status;
+        waitpid(pids[i], &status, 0);
+    }
+}
+
+// 리다이렉션 처리 함수
+int handle_redirection(char **args, int argc) {
+    int i;
+    char *output_file = NULL;
+    char *input_file = NULL;
+    int append_mode = 0;  // 추가 모드 플래그
+    
+    // 리다이렉션 기호들을 찾아서 파일명 확인
+    for (i = 0; i < argc; i++) {
+        if (strcmp(args[i], ">>") == 0) {
+            if (i + 1 < argc) {
+                output_file = args[i + 1];
+                append_mode = 1;  // 추가 모드 설정
+                args[i] = NULL;   // '>>' 기호 제거
+                args[i + 1] = NULL; // 파일명도 제거
+                break;
+            } else {
+                printf("오류: '>>' 뒤에 파일명이 없습니다.\n");
+                return -1;
+            }
+        } else if (strcmp(args[i], ">") == 0) {
+            if (i + 1 < argc) {
+                output_file = args[i + 1];
+                append_mode = 0;  // 덮어쓰기 모드 설정
+                args[i] = NULL;   // '>' 기호 제거
+                args[i + 1] = NULL; // 파일명도 제거
+                break;
+            } else {
+                printf("오류: '>' 뒤에 파일명이 없습니다.\n");
+                return -1;
+            }
+        }
+    }
+    
+    // 입력 리다이렉션 찾기
+    for (i = 0; i < argc; i++) {
+        if (args[i] != NULL && strcmp(args[i], "<") == 0) {
+            if (i + 1 < argc) {
+                input_file = args[i + 1];
+                args[i] = NULL;     // '<' 기호 제거
+                args[i + 1] = NULL; // 파일명도 제거
+                break;
+            } else {
+                printf("오류: '<' 뒤에 파일명이 없습니다.\n");
+                return -1;
+            }
+        }
+    }
+    
+    // 입력 리다이렉션 처리
+    if (input_file != NULL) {
+        int fd = open(input_file, O_RDONLY);
+        if (fd == -1) {
+            perror("입력 파일 열기 오류");
+            return -1;
+        }
+        
+        // 표준 입력을 파일로 리다이렉션
+        if (dup2(fd, STDIN_FILENO) == -1) {
+            perror("입력 리다이렉션 오류");
+            close(fd);
+            return -1;
+        }
+        close(fd);
+    }
+    
+    // 출력 리다이렉션 처리
+    if (output_file != NULL) {
+        int fd;
+        if (append_mode) {
+            // 추가 모드: 파일 끝에 추가
+            fd = open(output_file, O_WRONLY | O_CREAT | O_APPEND, 0644);
+        } else {
+            // 덮어쓰기 모드: 파일 내용 덮어쓰기
+            fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        }
+        
+        if (fd == -1) {
+            perror("출력 파일 열기 오류");
+            return -1;
+        }
+        
+        // 표준 출력을 파일로 리다이렉션
+        if (dup2(fd, STDOUT_FILENO) == -1) {
+            perror("출력 리다이렉션 오류");
+            close(fd);
+            return -1;
+        }
+        close(fd);
+    }
+    
+    return 0;
+}
+
+// 명령어 실행 함수
+void execute_command(char **args, int argc) {
+    pid_t pid = fork();
+    
+    if (pid == 0) {  // 자식 프로세스
+        // 리다이렉션 처리
+        if (handle_redirection(args, argc) == -1) {
+            exit(1);
+        }
+        
+        // 명령어 실행
+        if (execvp(args[0], args) == -1) {
+            perror("명령어 실행 오류");
+            exit(1);
+        }
+    } else if (pid > 0) {  // 부모 프로세스
+        int status;
+        waitpid(pid, &status, 0);
+    } else {
+        perror("fork 오류");
+    }
+}
+
+// 내장 명령어 처리
+int handle_builtin(char **args, int argc) {
+    if (argc == 0) return 0;
+    
+    // exit 명령어
+    if (strcmp(args[0], "exit") == 0) {
+        printf("터미널을 종료합니다.\n");
+        exit(0);
+    }
+    
+    // cd 명령어
+    if (strcmp(args[0], "cd") == 0) {
+        if (argc < 2) {
+            printf("사용법: cd <디렉토리>\n");
+        } else {
+            if (chdir(args[1]) != 0) {
+                perror("디렉토리 변경 오류");
+            }
+        }
+        return 1;
+    }
+    
+    return 0;  // 내장 명령어가 아님
+}
+
+int main() {
+    char command[MAX_CMD_LEN];
+    char *args[MAX_ARGS];
+    Command commands[MAX_PIPES];
+    int argc, cmd_count;
+    
+    printf("간단한 터미널 (리다이렉션 지원: >, >>, <, |)\n");
+    printf("종료하려면 'exit'를 입력하세요.\n\n");
+    
+    while (1) {
+        printf("myshell> ");
+        fflush(stdout);
+        
+        // 명령어 입력받기
+        if (fgets(command, sizeof(command), stdin) == NULL) {
+            break;
+        }
+        
+        // 빈 명령어 처리
+        if (strlen(command) <= 1) {
+            continue;
+        }
+        
+        // 파이프가 있는지 확인
+        if (strstr(command, "|") != NULL) {
+            // 파이프 명령어 처리
+            cmd_count = parse_pipes(command, commands);
+            if (cmd_count > 1) {
+                execute_pipes(commands, cmd_count);
+            } else if (cmd_count == 1) {
+                // 파이프가 있었지만 실제로는 하나의 명령어만 있는 경우
+                execute_command(commands[0].args, commands[0].argc);
+            }
+        } else {
+            // 일반 명령어 처리
+            argc = parse_command(command, args);
+            if (argc == 0) continue;
+            
+            // 내장 명령어 처리
+            if (handle_builtin(args, argc)) {
+                continue;
+            }
+            
+            // 외부 명령어 실행
+            execute_command(args, argc);
+        }
+    }
+    
+    return 0;
+}
+```
 
