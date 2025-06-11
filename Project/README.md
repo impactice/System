@@ -9119,3 +9119,875 @@ int main(int argc, char* argv[]) {
     return exit_code;
 }
 ```
+
+## III. 사용자 및 그룹 관리 (User and Group Management)
+
+
+## whoami: 현재 로그인된 사용자 이름 출력
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <pwd.h>
+#include <sys/types.h>
+
+int cmd_whoami() {
+    // 방법 1: getuid()와 getpwuid() 사용
+    uid_t uid = getuid();  // 현재 사용자의 UID 가져오기
+    struct passwd *pw = getpwuid(uid);  // UID로 사용자 정보 가져오기
+    
+    if (pw == NULL) {
+        perror("getpwuid");
+        return 1;
+    }
+    
+    printf("%s\n", pw->pw_name);
+    return 0;
+}
+
+// 대안 방법: getlogin() 사용
+int cmd_whoami_alt() {
+    char *username = getlogin();
+    
+    if (username == NULL) {
+        perror("getlogin");
+        return 1;
+    }
+    
+    printf("%s\n", username);
+    return 0;
+}
+
+// 환경변수를 사용하는 방법 (백업용)
+int cmd_whoami_env() {
+    char *username = getenv("USER");
+    
+    if (username == NULL) {
+        username = getenv("LOGNAME");
+    }
+    
+    if (username == NULL) {
+        fprintf(stderr, "whoami: cannot find username\n");
+        return 1;
+    }
+    
+    printf("%s\n", username);
+    return 0;
+}
+
+// 테스트용 main 함수
+int main() {
+    printf("Method 1 (getuid + getpwuid): ");
+    cmd_whoami();
+    
+    printf("Method 2 (getlogin): ");
+    cmd_whoami_alt();
+    
+    printf("Method 3 (environment): ");
+    cmd_whoami_env();
+    
+    return 0;
+}
+
+// 터미널 구현에서 사용할 함수
+int execute_whoami(char **args) {
+    (void)args;  // 인자 사용하지 않음을 명시
+    return cmd_whoami();
+}
+```
+
+## id: 사용자 및 그룹 ID 정보 출력
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <pwd.h>
+#include <grp.h>
+#include <sys/types.h>
+#include <string.h>
+
+// 기본 id 명령어 구현 (uid, gid, groups 모두 출력)
+int cmd_id() {
+    uid_t uid = getuid();        // 실제 사용자 ID
+    uid_t euid = geteuid();      // 유효 사용자 ID
+    gid_t gid = getgid();        // 실제 그룹 ID
+    gid_t egid = getegid();      // 유효 그룹 ID
+    
+    struct passwd *pw = getpwuid(uid);
+    struct group *gr = getgrgid(gid);
+    
+    // uid 출력
+    printf("uid=%d", uid);
+    if (pw != NULL) {
+        printf("(%s)", pw->pw_name);
+    }
+    
+    // gid 출력
+    printf(" gid=%d", gid);
+    if (gr != NULL) {
+        printf("(%s)", gr->gr_name);
+    }
+    
+    // euid가 uid와 다르면 출력
+    if (euid != uid) {
+        struct passwd *epw = getpwuid(euid);
+        printf(" euid=%d", euid);
+        if (epw != NULL) {
+            printf("(%s)", epw->pw_name);
+        }
+    }
+    
+    // egid가 gid와 다르면 출력
+    if (egid != gid) {
+        struct group *egr = getgrgid(egid);
+        printf(" egid=%d", egid);
+        if (egr != NULL) {
+            printf("(%s)", egr->gr_name);
+        }
+    }
+    
+    // 보조 그룹들 출력
+    int ngroups = getgroups(0, NULL);  // 그룹 개수 확인
+    if (ngroups > 0) {
+        gid_t *groups = malloc(ngroups * sizeof(gid_t));
+        if (groups != NULL) {
+            if (getgroups(ngroups, groups) != -1) {
+                printf(" groups=");
+                for (int i = 0; i < ngroups; i++) {
+                    if (i > 0) printf(",");
+                    printf("%d", groups[i]);
+                    
+                    struct group *g = getgrgid(groups[i]);
+                    if (g != NULL) {
+                        printf("(%s)", g->gr_name);
+                    }
+                }
+            }
+            free(groups);
+        }
+    }
+    
+    printf("\n");
+    return 0;
+}
+
+// -u 옵션: 사용자 ID만 출력
+int cmd_id_user() {
+    printf("%d\n", getuid());
+    return 0;
+}
+
+// -g 옵션: 그룹 ID만 출력
+int cmd_id_group() {
+    printf("%d\n", getgid());
+    return 0;
+}
+
+// -un 옵션: 사용자 이름 출력
+int cmd_id_user_name() {
+    uid_t uid = getuid();
+    struct passwd *pw = getpwuid(uid);
+    
+    if (pw == NULL) {
+        printf("%d\n", uid);  // 이름을 찾을 수 없으면 숫자로 출력
+    } else {
+        printf("%s\n", pw->pw_name);
+    }
+    return 0;
+}
+
+// -gn 옵션: 그룹 이름 출력
+int cmd_id_group_name() {
+    gid_t gid = getgid();
+    struct group *gr = getgrgid(gid);
+    
+    if (gr == NULL) {
+        printf("%d\n", gid);  // 이름을 찾을 수 없으면 숫자로 출력
+    } else {
+        printf("%s\n", gr->gr_name);
+    }
+    return 0;
+}
+
+// -G 옵션: 모든 그룹 ID 출력
+int cmd_id_all_groups() {
+    int ngroups = getgroups(0, NULL);
+    if (ngroups > 0) {
+        gid_t *groups = malloc(ngroups * sizeof(gid_t));
+        if (groups != NULL) {
+            if (getgroups(ngroups, groups) != -1) {
+                for (int i = 0; i < ngroups; i++) {
+                    if (i > 0) printf(" ");
+                    printf("%d", groups[i]);
+                }
+                printf("\n");
+            }
+            free(groups);
+        }
+    }
+    return 0;
+}
+
+// 터미널에서 사용할 메인 함수
+int execute_id(char **args) {
+    if (args[1] == NULL) {
+        // 옵션이 없으면 기본 출력
+        return cmd_id();
+    }
+    
+    // 옵션 파싱
+    if (strcmp(args[1], "-u") == 0) {
+        return cmd_id_user();
+    } else if (strcmp(args[1], "-g") == 0) {
+        return cmd_id_group();
+    } else if (strcmp(args[1], "-un") == 0) {
+        return cmd_id_user_name();
+    } else if (strcmp(args[1], "-gn") == 0) {
+        return cmd_id_group_name();
+    } else if (strcmp(args[1], "-G") == 0) {
+        return cmd_id_all_groups();
+    } else {
+        fprintf(stderr, "id: invalid option '%s'\n", args[1]);
+        fprintf(stderr, "Usage: id [-u|-g|-G|-un|-gn]\n");
+        return 1;
+    }
+}
+
+// 테스트용 main 함수
+int main(int argc, char *argv[]) {
+    if (argc == 1) {
+        printf("Basic id output:\n");
+        cmd_id();
+        
+        printf("\nUser ID: ");
+        cmd_id_user();
+        
+        printf("Group ID: ");
+        cmd_id_group();
+        
+        printf("User name: ");
+        cmd_id_user_name();
+        
+        printf("Group name: ");
+        cmd_id_group_name();
+        
+        printf("All groups: ");
+        cmd_id_all_groups();
+    } else {
+        return execute_id(argv);
+    }
+    
+    return 0;
+}
+```
+
+## passwd: 사용자 비밀번호 변경 (자신 또는 다른 사용자)
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pwd.h>
+#include <termios.h>
+#include <crypt.h>
+#include <time.h>
+#include <sys/types.h>
+
+#define MAX_PASSWORD_LEN 128
+#define MIN_PASSWORD_LEN 6
+
+// 비밀번호 입력 시 화면에 표시하지 않기 위한 함수
+char* getpass_custom(const char* prompt) {
+    static char password[MAX_PASSWORD_LEN];
+    struct termios old_termios, new_termios;
+    
+    printf("%s", prompt);
+    fflush(stdout);
+    
+    // 터미널 설정 변경 (echo 끄기)
+    tcgetattr(STDIN_FILENO, &old_termios);
+    new_termios = old_termios;
+    new_termios.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
+    
+    // 비밀번호 입력
+    if (fgets(password, sizeof(password), stdin) != NULL) {
+        // 개행문자 제거
+        size_t len = strlen(password);
+        if (len > 0 && password[len-1] == '\n') {
+            password[len-1] = '\0';
+        }
+    }
+    
+    // 터미널 설정 복구
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_termios);
+    printf("\n");
+    
+    return password;
+}
+
+// 비밀번호 강도 검사
+int validate_password(const char* password) {
+    int len = strlen(password);
+    int has_upper = 0, has_lower = 0, has_digit = 0, has_special = 0;
+    
+    if (len < MIN_PASSWORD_LEN) {
+        printf("BAD PASSWORD: The password is shorter than %d characters\n", MIN_PASSWORD_LEN);
+        return 0;
+    }
+    
+    if (len > MAX_PASSWORD_LEN) {
+        printf("BAD PASSWORD: The password is too long\n");
+        return 0;
+    }
+    
+    // 문자 종류 검사
+    for (int i = 0; i < len; i++) {
+        if (password[i] >= 'A' && password[i] <= 'Z') has_upper = 1;
+        else if (password[i] >= 'a' && password[i] <= 'z') has_lower = 1;
+        else if (password[i] >= '0' && password[i] <= '9') has_digit = 1;
+        else has_special = 1;
+    }
+    
+    int complexity = has_upper + has_lower + has_digit + has_special;
+    if (complexity < 3) {
+        printf("BAD PASSWORD: The password must contain at least 3 of the following:\n");
+        printf("  - uppercase letters\n");
+        printf("  - lowercase letters\n");
+        printf("  - digits\n");
+        printf("  - special characters\n");
+        return 0;
+    }
+    
+    // 간단한 사전 단어 검사
+    const char* common_passwords[] = {
+        "password", "123456", "qwerty", "admin", "root", "user", "guest", NULL
+    };
+    
+    for (int i = 0; common_passwords[i] != NULL; i++) {
+        if (strcasecmp(password, common_passwords[i]) == 0) {
+            printf("BAD PASSWORD: The password is too simple\n");
+            return 0;
+        }
+    }
+    
+    return 1;
+}
+
+// 비밀번호 암호화 (교육용 - 실제로는 더 강력한 해시 사용)
+char* encrypt_password(const char* password) {
+    static char salt[16];
+    static char* encrypted;
+    
+    // 간단한 salt 생성
+    snprintf(salt, sizeof(salt), "$6$%.8lx$", (unsigned long)time(NULL));
+    
+    // crypt 함수 사용 (실제 시스템에서는 더 강력한 해시 사용)
+    encrypted = crypt(password, salt);
+    return encrypted;
+}
+
+// 현재 사용자의 비밀번호 변경
+int change_own_password() {
+    uid_t uid = getuid();
+    struct passwd *pw = getpwuid(uid);
+    
+    if (pw == NULL) {
+        perror("getpwuid");
+        return 1;
+    }
+    
+    printf("Changing password for %s.\n", pw->pw_name);
+    
+    // 현재 비밀번호 확인 (실제로는 /etc/shadow 확인)
+    char* current_pass = getpass_custom("(current) UNIX password: ");
+    
+    // 교육용이므로 간단한 확인
+    if (strlen(current_pass) == 0) {
+        printf("passwd: Authentication token manipulation error\n");
+        return 1;
+    }
+    
+    // 새 비밀번호 입력
+    char* new_pass1 = getpass_custom("Enter new UNIX password: ");
+    
+    // 비밀번호 강도 검사
+    if (!validate_password(new_pass1)) {
+        printf("passwd: Have exhausted maximum number of retries for service\n");
+        return 1;
+    }
+    
+    // 비밀번호 확인
+    char* new_pass2 = getpass_custom("Retype new UNIX password: ");
+    
+    if (strcmp(new_pass1, new_pass2) != 0) {
+        printf("Sorry, passwords do not match.\n");
+        printf("passwd: Authentication token manipulation error\n");
+        return 1;
+    }
+    
+    // 비밀번호 암호화
+    char* encrypted = encrypt_password(new_pass1);
+    
+    printf("passwd: password updated successfully\n");
+    printf("[교육용] 암호화된 비밀번호: %s\n", encrypted);
+    
+    return 0;
+}
+
+// 다른 사용자의 비밀번호 변경 (root 권한 필요)
+int change_user_password(const char* username) {
+    // root 권한 확인
+    if (getuid() != 0) {
+        printf("passwd: You may not view or modify password information for %s.\n", username);
+        return 1;
+    }
+    
+    // 사용자 존재 확인
+    struct passwd *pw = getpwnam(username);
+    if (pw == NULL) {
+        printf("passwd: user '%s' does not exist\n", username);
+        return 1;
+    }
+    
+    printf("Changing password for user %s.\n", username);
+    
+    // 새 비밀번호 입력
+    char* new_pass1 = getpass_custom("New password: ");
+    
+    // 비밀번호 강도 검사
+    if (!validate_password(new_pass1)) {
+        printf("passwd: Have exhausted maximum number of retries for service\n");
+        return 1;
+    }
+    
+    // 비밀번호 확인
+    char* new_pass2 = getpass_custom("Retype new password: ");
+    
+    if (strcmp(new_pass1, new_pass2) != 0) {
+        printf("Sorry, passwords do not match.\n");
+        printf("passwd: Authentication token manipulation error\n");
+        return 1;
+    }
+    
+    // 비밀번호 암호화
+    char* encrypted = encrypt_password(new_pass1);
+    
+    printf("passwd: password updated successfully\n");
+    printf("[교육용] 사용자 %s의 암호화된 비밀번호: %s\n", username, encrypted);
+    
+    return 0;
+}
+
+// passwd 명령어 도움말
+void print_passwd_help() {
+    printf("Usage: passwd [OPTION] [LOGIN]\n");
+    printf("Change user password.\n\n");
+    printf("Options:\n");
+    printf("  -h, --help     display this help message and exit\n");
+    printf("  LOGIN          change password for LOGIN user (root only)\n\n");
+    printf("If no LOGIN is provided, changes password for current user.\n");
+}
+
+// 터미널에서 사용할 메인 함수
+int execute_passwd(char **args) {
+    // 도움말 옵션 확인
+    if (args[1] != NULL && (strcmp(args[1], "-h") == 0 || strcmp(args[1], "--help") == 0)) {
+        print_passwd_help();
+        return 0;
+    }
+    
+    // 사용자 지정 여부 확인
+    if (args[1] != NULL) {
+        // 다른 사용자의 비밀번호 변경
+        return change_user_password(args[1]);
+    } else {
+        // 자신의 비밀번호 변경
+        return change_own_password();
+    }
+}
+
+// 테스트용 main 함수
+int main(int argc, char *argv[]) {
+    printf("=== 교육용 passwd 명령어 구현 ===\n");
+    printf("주의: 이는 교육용 구현으로 실제 시스템 비밀번호를 변경하지 않습니다.\n\n");
+    
+    return execute_passwd(argv);
+}
+```
+
+## adduser: 새 사용자 추가 (관리자 권한)
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pwd.h>
+#include <grp.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <termios.h>
+#include <crypt.h>
+#include <time.h>
+#include <errno.h>
+
+#define MAX_USERNAME_LEN 32
+#define MAX_PASSWORD_LEN 128
+#define MAX_FULLNAME_LEN 256
+#define MAX_PATH_LEN 512
+
+// 사용자 정보 구조체
+typedef struct {
+    char username[MAX_USERNAME_LEN];
+    char password[MAX_PASSWORD_LEN];
+    char fullname[MAX_FULLNAME_LEN];
+    char home_dir[MAX_PATH_LEN];
+    char shell[MAX_PATH_LEN];
+    uid_t uid;
+    gid_t gid;
+    int create_home;
+    int system_user;
+} user_info_t;
+
+// 다음 사용가능한 UID 찾기
+uid_t find_next_uid(int system_user) {
+    uid_t start_uid = system_user ? 100 : 1000;  // 시스템 사용자는 100부터, 일반 사용자는 1000부터
+    uid_t max_uid = system_user ? 999 : 65533;
+    
+    for (uid_t uid = start_uid; uid <= max_uid; uid++) {
+        if (getpwuid(uid) == NULL) {
+            return uid;
+        }
+    }
+    
+    return 0;  // 사용 가능한 UID가 없음
+}
+
+// 사용자명 유효성 검사
+int validate_username(const char* username) {
+    int len = strlen(username);
+    
+    // 길이 검사
+    if (len == 0 || len >= MAX_USERNAME_LEN) {
+        printf("adduser: invalid username length\n");
+        return 0;
+    }
+    
+    // 첫 글자는 문자여야 함
+    if (!((username[0] >= 'a' && username[0] <= 'z') || 
+          (username[0] >= 'A' && username[0] <= 'Z'))) {
+        printf("adduser: username must start with a letter\n");
+        return 0;
+    }
+    
+    // 허용된 문자만 사용 (영문자, 숫자, 하이픈, 언더스코어)
+    for (int i = 0; i < len; i++) {
+        char c = username[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
+              (c >= '0' && c <= '9') || c == '-' || c == '_')) {
+            printf("adduser: username contains invalid characters\n");
+            return 0;
+        }
+    }
+    
+    // 기존 사용자와 중복 확인
+    struct passwd *pw = getpwnam(username);
+    if (pw != NULL) {
+        printf("adduser: user '%s' already exists\n", username);
+        return 0;
+    }
+    
+    return 1;
+}
+
+// 비밀번호 입력 (화면에 표시하지 않음)
+char* getpass_secure(const char* prompt) {
+    static char password[MAX_PASSWORD_LEN];
+    struct termios old_termios, new_termios;
+    
+    printf("%s", prompt);
+    fflush(stdout);
+    
+    // 터미널 설정 변경 (echo 끄기)
+    tcgetattr(STDIN_FILENO, &old_termios);
+    new_termios = old_termios;
+    new_termios.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
+    
+    // 비밀번호 입력
+    if (fgets(password, sizeof(password), stdin) != NULL) {
+        size_t len = strlen(password);
+        if (len > 0 && password[len-1] == '\n') {
+            password[len-1] = '\0';
+        }
+    }
+    
+    // 터미널 설정 복구
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_termios);
+    printf("\n");
+    
+    return password;
+}
+
+// 사용자 정보 대화형 입력
+int get_user_info_interactive(user_info_t* user) {
+    char input[256];
+    
+    printf("Adding user `%s' ...\n", user->username);
+    
+    // 그룹 생성 (사용자명과 동일한 그룹)
+    printf("Adding new group `%s' (%d) ...\n", user->username, user->gid);
+    
+    // 사용자 추가
+    printf("Adding new user `%s' (%d) with group `%s' ...\n", 
+           user->username, user->uid, user->username);
+    
+    // 홈 디렉토리 생성
+    if (user->create_home) {
+        printf("Creating home directory `%s' ...\n", user->home_dir);
+    }
+    
+    // 기본 파일 복사
+    printf("Copying files from `/etc/skel' ...\n");
+    
+    // 사용자 정보 입력
+    printf("Enter new UNIX password: ");
+    char* password1 = getpass_secure("");
+    printf("Retype new UNIX password: ");
+    char* password2 = getpass_secure("");
+    
+    if (strcmp(password1, password2) != 0) {
+        printf("Sorry, passwords do not match\n");
+        return 0;
+    }
+    
+    strncpy(user->password, password1, MAX_PASSWORD_LEN - 1);
+    
+    // 개인정보 입력
+    printf("Changing the user information for %s\n", user->username);
+    printf("Enter the new value, or press ENTER for the default\n");
+    
+    printf("\tFull Name []: ");
+    fflush(stdout);
+    if (fgets(input, sizeof(input), stdin) != NULL) {
+        size_t len = strlen(input);
+        if (len > 0 && input[len-1] == '\n') {
+            input[len-1] = '\0';
+        }
+        if (strlen(input) > 0) {
+            strncpy(user->fullname, input, MAX_FULLNAME_LEN - 1);
+        }
+    }
+    
+    printf("\tRoom Number []: ");
+    fflush(stdout);
+    if (fgets(input, sizeof(input), stdin) != NULL) {
+        // 입력 무시 (데모용)
+    }
+    
+    printf("\tWork Phone []: ");
+    fflush(stdout);
+    if (fgets(input, sizeof(input), stdin) != NULL) {
+        // 입력 무시 (데모용)
+    }
+    
+    printf("\tHome Phone []: ");
+    fflush(stdout);
+    if (fgets(input, sizeof(input), stdin) != NULL) {
+        // 입력 무시 (데모용)
+    }
+    
+    printf("\tOther []: ");
+    fflush(stdout);
+    if (fgets(input, sizeof(input), stdin) != NULL) {
+        // 입력 무시 (데모용)
+    }
+    
+    printf("Is the information correct? [Y/n] ");
+    fflush(stdout);
+    if (fgets(input, sizeof(input), stdin) != NULL) {
+        if (input[0] == 'n' || input[0] == 'N') {
+            printf("User creation cancelled.\n");
+            return 0;
+        }
+    }
+    
+    return 1;
+}
+
+// 사용자 생성 시뮬레이션
+int create_user_simulation(const user_info_t* user) {
+    printf("\n=== 사용자 생성 시뮬레이션 ===\n");
+    
+    // 그룹 생성 시뮬레이션
+    printf("[시뮬레이션] Creating group '%s' with GID %d\n", user->username, user->gid);
+    printf("[시뮬레이션] Group entry: %s:x:%d:\n", user->username, user->gid);
+    
+    // 사용자 생성 시뮬레이션
+    printf("[시뮬레이션] Creating user '%s' with UID %d\n", user->username, user->uid);
+    
+    // 비밀번호 암호화
+    char salt[16];
+    snprintf(salt, sizeof(salt), "$6$%.8lx$", (unsigned long)time(NULL));
+    char* encrypted = crypt(user->password, salt);
+    
+    printf("[시뮬레이션] Password entry: %s:%s:%d:%d:%s:%s:%s\n",
+           user->username, encrypted, user->uid, user->gid,
+           user->fullname, user->home_dir, user->shell);
+    
+    // 홈 디렉토리 생성 시뮬레이션
+    if (user->create_home) {
+        printf("[시뮬레이션] Creating home directory: %s\n", user->home_dir);
+        printf("[시뮬레이션] Setting permissions: chmod 755 %s\n", user->home_dir);
+        printf("[시뮬레이션] Setting ownership: chown %d:%d %s\n", 
+               user->uid, user->gid, user->home_dir);
+        
+        // 기본 파일 복사 시뮬레이션
+        printf("[시뮬레이션] Copying files from /etc/skel:\n");
+        printf("  - .bash_logout\n");
+        printf("  - .bashrc\n");
+        printf("  - .profile\n");
+    }
+    
+    printf("\n사용자 '%s'가 성공적으로 생성되었습니다.\n", user->username);
+    return 1;
+}
+
+// adduser 명령어 메인 함수
+int cmd_adduser(const char* username, int system_user, int no_create_home) {
+    // root 권한 확인
+    if (getuid() != 0) {
+        printf("adduser: Only root may add a user or group to the system.\n");
+        return 1;
+    }
+    
+    // 사용자명 유효성 검사
+    if (!validate_username(username)) {
+        return 1;
+    }
+    
+    // 사용자 정보 초기화
+    user_info_t user = {0};
+    strncpy(user.username, username, MAX_USERNAME_LEN - 1);
+    user.system_user = system_user;
+    user.create_home = !no_create_home && !system_user;
+    
+    // UID/GID 할당
+    user.uid = find_next_uid(system_user);
+    if (user.uid == 0) {
+        printf("adduser: no available UID found\n");
+        return 1;
+    }
+    user.gid = user.uid;  // 기본적으로 UID와 동일한 GID 사용
+    
+    // 홈 디렉토리 설정
+    if (system_user) {
+        strncpy(user.home_dir, "/var/lib/", MAX_PATH_LEN - 1);
+        strncat(user.home_dir, username, MAX_PATH_LEN - strlen(user.home_dir) - 1);
+        strncpy(user.shell, "/usr/sbin/nologin", MAX_PATH_LEN - 1);
+    } else {
+        strncpy(user.home_dir, "/home/", MAX_PATH_LEN - 1);
+        strncat(user.home_dir, username, MAX_PATH_LEN - strlen(user.home_dir) - 1);
+        strncpy(user.shell, "/bin/bash", MAX_PATH_LEN - 1);
+    }
+    
+    // 시스템 사용자가 아닌 경우 대화형 입력
+    if (!system_user) {
+        if (!get_user_info_interactive(&user)) {
+            return 1;
+        }
+    } else {
+        // 시스템 사용자는 비밀번호 없음
+        user.password[0] = '\0';
+        printf("Adding system user `%s' (UID %d) ...\n", username, user.uid);
+        printf("Adding new group `%s' (GID %d) ...\n", username, user.gid);
+        printf("Adding new user `%s' (UID %d) with group `%s' ...\n", 
+               username, user.uid, username);
+    }
+    
+    // 사용자 생성 (시뮬레이션)
+    return create_user_simulation(&user) ? 0 : 1;
+}
+
+// 도움말 출력
+void print_adduser_help() {
+    printf("Usage: adduser [OPTIONS] LOGIN\n");
+    printf("Add a user to the system.\n\n");
+    printf("Options:\n");
+    printf("  --system           create a system account\n");
+    printf("  --no-create-home   do not create the user's home directory\n");
+    printf("  --help             display this help and exit\n\n");
+    printf("Examples:\n");
+    printf("  adduser john              # Add regular user 'john'\n");
+    printf("  adduser --system www-data # Add system user 'www-data'\n");
+}
+
+// 터미널에서 사용할 함수
+int execute_adduser(char **args) {
+    int system_user = 0;
+    int no_create_home = 0;
+    char* username = NULL;
+    
+    // 인자 파싱
+    for (int i = 1; args[i] != NULL; i++) {
+        if (strcmp(args[i], "--help") == 0) {
+            print_adduser_help();
+            return 0;
+        } else if (strcmp(args[i], "--system") == 0) {
+            system_user = 1;
+        } else if (strcmp(args[i], "--no-create-home") == 0) {
+            no_create_home = 1;
+        } else if (args[i][0] != '-') {
+            if (username == NULL) {
+                username = args[i];
+            } else {
+                printf("adduser: too many arguments\n");
+                return 1;
+            }
+        } else {
+            printf("adduser: unknown option '%s'\n", args[i]);
+            return 1;
+        }
+    }
+    
+    if (username == NULL) {
+        printf("adduser: missing username\n");
+        print_adduser_help();
+        return 1;
+    }
+    
+    return cmd_adduser(username, system_user, no_create_home);
+}
+
+// 테스트용 main 함수
+int main(int argc, char *argv[]) {
+    printf("=== 교육용 adduser 명령어 구현 ===\n");
+    printf("주의: 이는 교육용 구현으로 실제 시스템에 사용자를 추가하지 않습니다.\n\n");
+    
+    return execute_adduser(argv);
+}
+```
+
+## deluser: 사용자 삭제 (관리자 권한)
+
+## addgroup: 새 그룹 추가 (관리자 권한)
+
+## delgroup: 그룹 삭제 (관리자 권한)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
