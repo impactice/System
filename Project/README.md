@@ -4521,7 +4521,1272 @@ int main(int argc, char *argv[]) {
 // ./head -v file.txt                # 파일 하나여도 헤더 출력
 ```
 
+## tail: 파일의 마지막 N줄 출력 (기본 10줄)
+- -n NUM: 마지막 NUM줄 출력
+- -f: 파일 내용이 추가될 때 실시간으로 출력 (로그 파일 모니터링)
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <getopt.h>
 
+#define MAX_LINE_LENGTH 4096
+#define DEFAULT_LINES 10
+
+typedef struct {
+    char **lines;
+    int count;
+    int capacity;
+} LineBuffer;
+
+// 라인 버퍼 초기화
+LineBuffer* create_line_buffer(int capacity) {
+    LineBuffer *buf = malloc(sizeof(LineBuffer));
+    buf->lines = malloc(sizeof(char*) * capacity);
+    buf->count = 0;
+    buf->capacity = capacity;
+    return buf;
+}
+
+// 라인 버퍼 해제
+void free_line_buffer(LineBuffer *buf) {
+    for (int i = 0; i < buf->count; i++) {
+        free(buf->lines[i]);
+    }
+    free(buf->lines);
+    free(buf);
+}
+
+// 라인 추가 (링 버퍼 방식)
+void add_line(LineBuffer *buf, const char *line) {
+    if (buf->count < buf->capacity) {
+        buf->lines[buf->count] = strdup(line);
+        buf->count++;
+    } else {
+        // 가장 오래된 라인 제거하고 새 라인 추가
+        free(buf->lines[0]);
+        for (int i = 0; i < buf->capacity - 1; i++) {
+            buf->lines[i] = buf->lines[i + 1];
+        }
+        buf->lines[buf->capacity - 1] = strdup(line);
+    }
+}
+
+// 파일의 마지막 n줄 읽기
+int read_last_lines(const char *filename, int n) {
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        fprintf(stderr, "tail: cannot open '%s' for reading: %s\n", 
+                filename, strerror(errno));
+        return -1;
+    }
+
+    LineBuffer *buf = create_line_buffer(n);
+    char line[MAX_LINE_LENGTH];
+
+    // 파일의 모든 라인을 읽으면서 마지막 n줄만 버퍼에 유지
+    while (fgets(line, sizeof(line), file)) {
+        add_line(buf, line);
+    }
+
+    // 버퍼의 내용 출력
+    for (int i = 0; i < buf->count; i++) {
+        printf("%s", buf->lines[i]);
+    }
+
+    free_line_buffer(buf);
+    fclose(file);
+    return 0;
+}
+
+// 파일 크기 가져오기
+long get_file_size(const char *filename) {
+    struct stat st;
+    if (stat(filename, &st) == 0) {
+        return st.st_size;
+    }
+    return -1;
+}
+
+// 파일 실시간 모니터링
+int follow_file(const char *filename, int n) {
+    // 먼저 마지막 n줄 출력
+    if (read_last_lines(filename, n) < 0) {
+        return -1;
+    }
+
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        fprintf(stderr, "tail: cannot open '%s' for reading: %s\n", 
+                filename, strerror(errno));
+        return -1;
+    }
+
+    // 파일 끝으로 이동
+    fseek(file, 0, SEEK_END);
+    long last_size = ftell(file);
+
+    char line[MAX_LINE_LENGTH];
+    
+    while (1) {
+        // 파일 크기 확인
+        long current_size = get_file_size(filename);
+        
+        if (current_size > last_size) {
+            // 새로운 내용이 추가됨
+            while (fgets(line, sizeof(line), file)) {
+                printf("%s", line);
+                fflush(stdout);
+            }
+            last_size = current_size;
+        } else if (current_size < last_size) {
+            // 파일이 잘렸거나 새로 생성됨
+            fclose(file);
+            file = fopen(filename, "r");
+            if (!file) {
+                fprintf(stderr, "tail: '%s' has been replaced\n", filename);
+                return -1;
+            }
+            fseek(file, 0, SEEK_END);
+            last_size = ftell(file);
+        }
+        
+        // 100ms 대기
+        usleep(100000);
+    }
+
+    fclose(file);
+    return 0;
+}
+
+void print_usage(const char *prog_name) {
+    printf("Usage: %s [OPTION]... [FILE]...\n", prog_name);
+    printf("Print the last 10 lines of each FILE to standard output.\n");
+    printf("With more than one FILE, precede each with a header giving the file name.\n\n");
+    printf("Options:\n");
+    printf("  -n, --lines=NUM     output the last NUM lines, instead of the last 10\n");
+    printf("  -f, --follow        output appended data as the file grows\n");
+    printf("  -h, --help          display this help and exit\n");
+}
+
+int main(int argc, char *argv[]) {
+    int n = DEFAULT_LINES;
+    int follow = 0;
+    int opt;
+    
+    static struct option long_options[] = {
+        {"lines", required_argument, 0, 'n'},
+        {"follow", no_argument, 0, 'f'},
+        {"help", no_argument, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+
+    // 옵션 파싱
+    while ((opt = getopt_long(argc, argv, "n:fh", long_options, NULL)) != -1) {
+        switch (opt) {
+            case 'n':
+                n = atoi(optarg);
+                if (n <= 0) {
+                    fprintf(stderr, "tail: invalid number of lines: '%s'\n", optarg);
+                    return 1;
+                }
+                break;
+            case 'f':
+                follow = 1;
+                break;
+            case 'h':
+                print_usage(argv[0]);
+                return 0;
+            default:
+                print_usage(argv[0]);
+                return 1;
+        }
+    }
+
+    // 파일명이 없으면 표준입력 사용
+    if (optind >= argc) {
+        fprintf(stderr, "tail: missing file operand\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    // 여러 파일 처리
+    int num_files = argc - optind;
+    int result = 0;
+
+    for (int i = optind; i < argc; i++) {
+        const char *filename = argv[i];
+        
+        // 여러 파일일 때 헤더 출력
+        if (num_files > 1) {
+            if (i > optind) printf("\n");
+            printf("==> %s <==\n", filename);
+        }
+
+        if (follow && i == argc - 1) {
+            // -f 옵션은 마지막 파일에만 적용
+            result = follow_file(filename, n);
+        } else {
+            result = read_last_lines(filename, n);
+        }
+
+        if (result < 0) {
+            result = 1; // 에러 발생
+        }
+    }
+
+    return result;
+}
+```
+
+## find: 파일 또는 디렉토리 검색
+- -name PATTERN: 이름으로 검색
+- -type TYPE: 파일 종류 (d: 디렉토리, f: 파일)
+- -size N[cwbkMG]: 크기로 검색
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <fnmatch.h>
+#include <errno.h>
+#include <getopt.h>
+#include <limits.h>
+
+#define MAX_PATH_LENGTH 4096
+
+// 검색 조건을 저장하는 구조체
+typedef struct {
+    char *name_pattern;
+    char file_type;      // 'f': 파일, 'd': 디렉토리, 0: 모든 타입
+    long size_bytes;     // 파일 크기 (바이트)
+    char size_operator;  // '+': 이상, '-': 이하, '=': 정확히
+} SearchCriteria;
+
+// 크기 단위를 바이트로 변환
+long parse_size(const char *size_str, char *operator) {
+    if (!size_str || strlen(size_str) == 0) {
+        return -1;
+    }
+    
+    char *str = strdup(size_str);
+    long size = 0;
+    char unit = 'c';  // 기본 단위: 바이트
+    
+    // 연산자 확인
+    *operator = '=';  // 기본값: 정확히
+    if (str[0] == '+') {
+        *operator = '+';
+        memmove(str, str + 1, strlen(str));
+    } else if (str[0] == '-') {
+        *operator = '-';
+        memmove(str, str + 1, strlen(str));
+    }
+    
+    int len = strlen(str);
+    if (len > 0) {
+        // 마지막 문자가 단위인지 확인
+        char last_char = str[len - 1];
+        if (last_char == 'c' || last_char == 'w' || last_char == 'b' ||
+            last_char == 'k' || last_char == 'M' || last_char == 'G') {
+            unit = last_char;
+            str[len - 1] = '\0';
+        }
+    }
+    
+    size = atol(str);
+    free(str);
+    
+    // 단위에 따른 바이트 변환
+    switch (unit) {
+        case 'c': return size;              // 바이트
+        case 'w': return size * 2;          // 워드 (2바이트)
+        case 'b': return size * 512;        // 블록 (512바이트)
+        case 'k': return size * 1024;       // 킬로바이트
+        case 'M': return size * 1024 * 1024; // 메가바이트
+        case 'G': return size * 1024 * 1024 * 1024; // 기가바이트
+        default: return size;
+    }
+}
+
+// 크기 조건 확인
+int check_size_condition(long file_size, long target_size, char operator) {
+    switch (operator) {
+        case '+': return file_size > target_size;
+        case '-': return file_size < target_size;
+        case '=': return file_size == target_size;
+        default: return 1;
+    }
+}
+
+// 파일/디렉토리가 검색 조건에 맞는지 확인
+int matches_criteria(const char *path, const struct stat *st, const SearchCriteria *criteria) {
+    // 파일 타입 확인
+    if (criteria->file_type != 0) {
+        if (criteria->file_type == 'f' && !S_ISREG(st->st_mode)) {
+            return 0;
+        }
+        if (criteria->file_type == 'd' && !S_ISDIR(st->st_mode)) {
+            return 0;
+        }
+    }
+    
+    // 이름 패턴 확인
+    if (criteria->name_pattern) {
+        const char *filename = strrchr(path, '/');
+        filename = filename ? filename + 1 : path;
+        
+        if (fnmatch(criteria->name_pattern, filename, 0) != 0) {
+            return 0;
+        }
+    }
+    
+    // 크기 확인
+    if (criteria->size_bytes >= 0) {
+        if (!check_size_condition(st->st_size, criteria->size_bytes, criteria->size_operator)) {
+            return 0;
+        }
+    }
+    
+    return 1;
+}
+
+// 재귀적으로 디렉토리 탐색
+void find_recursive(const char *dir_path, const SearchCriteria *criteria) {
+    DIR *dir = opendir(dir_path);
+    if (!dir) {
+        fprintf(stderr, "find: '%s': %s\n", dir_path, strerror(errno));
+        return;
+    }
+    
+    struct dirent *entry;
+    struct stat st;
+    char full_path[MAX_PATH_LENGTH];
+    
+    while ((entry = readdir(dir)) != NULL) {
+        // . 과 .. 건너뛰기
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        
+        // 전체 경로 생성
+        int path_len = snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+        if (path_len >= sizeof(full_path)) {
+            fprintf(stderr, "find: path too long: %s/%s\n", dir_path, entry->d_name);
+            continue;
+        }
+        
+        // 파일 정보 가져오기
+        if (lstat(full_path, &st) != 0) {
+            fprintf(stderr, "find: '%s': %s\n", full_path, strerror(errno));
+            continue;
+        }
+        
+        // 조건 확인 후 출력
+        if (matches_criteria(full_path, &st, criteria)) {
+            printf("%s\n", full_path);
+        }
+        
+        // 디렉토리면 재귀 탐색 (심볼릭 링크 제외)
+        if (S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode)) {
+            find_recursive(full_path, criteria);
+        }
+    }
+    
+    closedir(dir);
+}
+
+void print_usage(const char *prog_name) {
+    printf("Usage: %s [path...] [expression]\n", prog_name);
+    printf("Search for files and directories.\n\n");
+    printf("Options:\n");
+    printf("  -name PATTERN    find files/directories matching PATTERN\n");
+    printf("  -type TYPE       find files of type TYPE:\n");
+    printf("                   f: regular file, d: directory\n");
+    printf("  -size N[cwbkMG]  find files of size N:\n");
+    printf("                   c: bytes, w: words (2 bytes), b: blocks (512 bytes)\n");
+    printf("                   k: kilobytes, M: megabytes, G: gigabytes\n");
+    printf("                   +N: greater than N, -N: less than N\n");
+    printf("  -h, --help       display this help and exit\n");
+    printf("\nExamples:\n");
+    printf("  %s /home -name '*.txt'        # find all .txt files in /home\n", prog_name);
+    printf("  %s . -type d                  # find all directories\n", prog_name);
+    printf("  %s /var -size +1M             # find files larger than 1MB\n", prog_name);
+    printf("  %s . -name '*.log' -size -10k # find .log files smaller than 10KB\n", prog_name);
+}
+
+int main(int argc, char *argv[]) {
+    SearchCriteria criteria = {0};
+    criteria.file_type = 0;
+    criteria.size_bytes = -1;
+    criteria.size_operator = '=';
+    
+    char *search_path = ".";  // 기본 검색 경로
+    int path_specified = 0;
+    
+    static struct option long_options[] = {
+        {"name", required_argument, 0, 'n'},
+        {"type", required_argument, 0, 't'},
+        {"size", required_argument, 0, 's'},
+        {"help", no_argument, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+    
+    int opt;
+    while ((opt = getopt_long(argc, argv, "n:t:s:h", long_options, NULL)) != -1) {
+        switch (opt) {
+            case 'n':
+                criteria.name_pattern = strdup(optarg);
+                break;
+            case 't':
+                if (strcmp(optarg, "f") == 0) {
+                    criteria.file_type = 'f';
+                } else if (strcmp(optarg, "d") == 0) {
+                    criteria.file_type = 'd';
+                } else {
+                    fprintf(stderr, "find: invalid file type '%s'\n", optarg);
+                    return 1;
+                }
+                break;
+            case 's':
+                criteria.size_bytes = parse_size(optarg, &criteria.size_operator);
+                if (criteria.size_bytes < 0) {
+                    fprintf(stderr, "find: invalid size '%s'\n", optarg);
+                    return 1;
+                }
+                break;
+            case 'h':
+                print_usage(argv[0]);
+                return 0;
+            default:
+                print_usage(argv[0]);
+                return 1;
+        }
+    }
+    
+    // 경로가 지정되었는지 확인
+    if (optind < argc) {
+        // 첫 번째 비옵션 인수가 경로인지 확인
+        struct stat st;
+        if (stat(argv[optind], &st) == 0) {
+            search_path = argv[optind];
+            path_specified = 1;
+            optind++;
+        }
+    }
+    
+    // 나머지 인수들을 옵션으로 처리 (GNU find 스타일)
+    while (optind < argc) {
+        char *arg = argv[optind];
+        
+        if (strcmp(arg, "-name") == 0) {
+            if (optind + 1 >= argc) {
+                fprintf(stderr, "find: missing argument for -name\n");
+                return 1;
+            }
+            criteria.name_pattern = strdup(argv[++optind]);
+        } else if (strcmp(arg, "-type") == 0) {
+            if (optind + 1 >= argc) {
+                fprintf(stderr, "find: missing argument for -type\n");
+                return 1;
+            }
+            char *type_arg = argv[++optind];
+            if (strcmp(type_arg, "f") == 0) {
+                criteria.file_type = 'f';
+            } else if (strcmp(type_arg, "d") == 0) {
+                criteria.file_type = 'd';
+            } else {
+                fprintf(stderr, "find: invalid file type '%s'\n", type_arg);
+                return 1;
+            }
+        } else if (strcmp(arg, "-size") == 0) {
+            if (optind + 1 >= argc) {
+                fprintf(stderr, "find: missing argument for -size\n");
+                return 1;
+            }
+            criteria.size_bytes = parse_size(argv[++optind], &criteria.size_operator);
+            if (criteria.size_bytes < 0) {
+                fprintf(stderr, "find: invalid size '%s'\n", argv[optind]);
+                return 1;
+            }
+        } else {
+            fprintf(stderr, "find: unknown option '%s'\n", arg);
+            return 1;
+        }
+        optind++;
+    }
+    
+    // 시작 디렉토리 자체도 조건 확인
+    struct stat st;
+    if (stat(search_path, &st) == 0) {
+        if (matches_criteria(search_path, &st, &criteria)) {
+            printf("%s\n", search_path);
+        }
+        
+        // 디렉토리면 재귀 탐색
+        if (S_ISDIR(st.st_mode)) {
+            find_recursive(search_path, &criteria);
+        }
+    } else {
+        fprintf(stderr, "find: '%s': %s\n", search_path, strerror(errno));
+        return 1;
+    }
+    
+    // 메모리 해제
+    if (criteria.name_pattern) {
+        free(criteria.name_pattern);
+    }
+    
+    return 0;
+}
+```
+
+## grep: 파일 내용에서 패턴 검색
+- -i: 대소문자 무시
+- -r: 하위 디렉토리 재귀적 검색
+- -l: 패턴이 포함된 파일 이름만 출력
+- -v: 패턴이 포함되지 않은 줄 출력
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <errno.h>
+#include <getopt.h>
+#include <regex.h>
+#include <ctype.h>
+
+#define MAX_LINE_LENGTH 4096
+#define MAX_PATH_LENGTH 4096
+
+// grep 옵션을 저장하는 구조체
+typedef struct {
+    int ignore_case;     // -i: 대소문자 무시
+    int recursive;       // -r: 재귀 검색
+    int files_only;      // -l: 파일명만 출력
+    int invert_match;    // -v: 패턴 불일치 줄 출력
+    int line_number;     // -n: 줄 번호 출력
+    int count_only;      // -c: 매칭된 줄 수만 출력
+    char *pattern;       // 검색 패턴
+} GrepOptions;
+
+// 문자열을 소문자로 변환
+void to_lowercase(char *str) {
+    for (int i = 0; str[i]; i++) {
+        str[i] = tolower(str[i]);
+    }
+}
+
+// 단순 문자열 검색 (정규식 없이)
+int simple_match(const char *line, const char *pattern, int ignore_case) {
+    if (ignore_case) {
+        char *line_copy = strdup(line);
+        char *pattern_copy = strdup(pattern);
+        to_lowercase(line_copy);
+        to_lowercase(pattern_copy);
+        
+        int result = (strstr(line_copy, pattern_copy) != NULL);
+        free(line_copy);
+        free(pattern_copy);
+        return result;
+    } else {
+        return (strstr(line, pattern) != NULL);
+    }
+}
+
+// 정규식 검색
+int regex_match(const char *line, regex_t *regex) {
+    return regexec(regex, line, 0, NULL, 0) == 0;
+}
+
+// 파일에서 패턴 검색
+int grep_file(const char *filename, const GrepOptions *opts, regex_t *regex, int use_regex) {
+    FILE *file = fopen(filename, "r");
+    if (!file) {
+        fprintf(stderr, "grep: %s: %s\n", filename, strerror(errno));
+        return -1;
+    }
+    
+    char line[MAX_LINE_LENGTH];
+    int line_num = 0;
+    int match_count = 0;
+    int found_match = 0;
+    
+    while (fgets(line, sizeof(line), file)) {
+        line_num++;
+        
+        // 줄 끝의 개행 문자 제거 (출력 형식 조정용)
+        int len = strlen(line);
+        if (len > 0 && line[len-1] == '\n') {
+            line[len-1] = '\0';
+        }
+        
+        // 패턴 매칭 확인
+        int matches;
+        if (use_regex) {
+            matches = regex_match(line, regex);
+        } else {
+            matches = simple_match(line, opts->pattern, opts->ignore_case);
+        }
+        
+        // -v 옵션이면 매칭 결과 반전
+        if (opts->invert_match) {
+            matches = !matches;
+        }
+        
+        if (matches) {
+            match_count++;
+            found_match = 1;
+            
+            // -l 옵션: 파일명만 출력하고 종료
+            if (opts->files_only) {
+                printf("%s\n", filename);
+                fclose(file);
+                return 1;
+            }
+            
+            // -c 옵션이 아니면 실제 줄 출력
+            if (!opts->count_only) {
+                // 파일명 출력 (표준입력이 아닌 경우)
+                if (strcmp(filename, "-") != 0) {
+                    printf("%s:", filename);
+                }
+                
+                // 줄 번호 출력
+                if (opts->line_number) {
+                    printf("%d:", line_num);
+                }
+                
+                printf("%s\n", line);
+            }
+        }
+    }
+    
+    // -c 옵션: 매칭된 줄 수 출력
+    if (opts->count_only) {
+        if (strcmp(filename, "-") != 0) {
+            printf("%s:", filename);
+        }
+        printf("%d\n", match_count);
+    }
+    
+    fclose(file);
+    return found_match ? 1 : 0;
+}
+
+// 디렉토리 재귀 검색
+int grep_directory(const char *dir_path, const GrepOptions *opts, regex_t *regex, int use_regex) {
+    DIR *dir = opendir(dir_path);
+    if (!dir) {
+        fprintf(stderr, "grep: %s: %s\n", dir_path, strerror(errno));
+        return -1;
+    }
+    
+    struct dirent *entry;
+    struct stat st;
+    char full_path[MAX_PATH_LENGTH];
+    int found_any = 0;
+    
+    while ((entry = readdir(dir)) != NULL) {
+        // . 과 .. 건너뛰기
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        
+        // 숨김 파일 건너뛰기 (선택사항)
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+        
+        // 전체 경로 생성
+        int path_len = snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+        if (path_len >= sizeof(full_path)) {
+            fprintf(stderr, "grep: path too long: %s/%s\n", dir_path, entry->d_name);
+            continue;
+        }
+        
+        // 파일 정보 가져오기
+        if (lstat(full_path, &st) != 0) {
+            fprintf(stderr, "grep: %s: %s\n", full_path, strerror(errno));
+            continue;
+        }
+        
+        // 일반 파일이면 검색
+        if (S_ISREG(st.st_mode)) {
+            int result = grep_file(full_path, opts, regex, use_regex);
+            if (result > 0) {
+                found_any = 1;
+            }
+        }
+        // 디렉토리이고 재귀 옵션이 활성화되어 있으면 재귀 검색
+        else if (S_ISDIR(st.st_mode) && opts->recursive) {
+            int result = grep_directory(full_path, opts, regex, use_regex);
+            if (result > 0) {
+                found_any = 1;
+            }
+        }
+    }
+    
+    closedir(dir);
+    return found_any ? 1 : 0;
+}
+
+// 표준입력에서 검색
+int grep_stdin(const GrepOptions *opts, regex_t *regex, int use_regex) {
+    return grep_file("-", opts, regex, use_regex);
+}
+
+// 파일인지 디렉토리인지 확인하고 적절한 함수 호출
+int grep_path(const char *path, const GrepOptions *opts, regex_t *regex, int use_regex) {
+    struct stat st;
+    
+    if (stat(path, &st) != 0) {
+        fprintf(stderr, "grep: %s: %s\n", path, strerror(errno));
+        return -1;
+    }
+    
+    if (S_ISREG(st.st_mode)) {
+        return grep_file(path, opts, regex, use_regex);
+    } else if (S_ISDIR(st.st_mode)) {
+        if (opts->recursive) {
+            return grep_directory(path, opts, regex, use_regex);
+        } else {
+            fprintf(stderr, "grep: %s: Is a directory\n", path);
+            return -1;
+        }
+    } else {
+        fprintf(stderr, "grep: %s: Not a regular file or directory\n", path);
+        return -1;
+    }
+}
+
+void print_usage(const char *prog_name) {
+    printf("Usage: %s [OPTION]... PATTERN [FILE]...\n", prog_name);
+    printf("Search for PATTERN in each FILE.\n");
+    printf("Example: %s -i 'hello world' menu.h main.c\n\n", prog_name);
+    printf("Pattern selection and interpretation:\n");
+    printf("  -E, --extended-regexp     PATTERN is an extended regular expression\n");
+    printf("  -i, --ignore-case         ignore case distinctions\n");
+    printf("  -v, --invert-match        select non-matching lines\n\n");
+    printf("Output control:\n");
+    printf("  -c, --count               print only a count of matching lines per FILE\n");
+    printf("  -l, --files-with-matches  print only names of FILEs containing matches\n");
+    printf("  -n, --line-number         print line number with output lines\n\n");
+    printf("File and directory selection:\n");
+    printf("  -r, --recursive           search directories recursively\n\n");
+    printf("  -h, --help                display this help and exit\n");
+    printf("\nWith no FILE, or when FILE is -, read standard input.\n");
+}
+
+int main(int argc, char *argv[]) {
+    GrepOptions opts = {0};
+    int use_regex = 0;
+    regex_t regex;
+    int regex_flags = REG_NOSUB;
+    
+    static struct option long_options[] = {
+        {"extended-regexp", no_argument, 0, 'E'},
+        {"ignore-case", no_argument, 0, 'i'},
+        {"recursive", no_argument, 0, 'r'},
+        {"files-with-matches", no_argument, 0, 'l'},
+        {"invert-match", no_argument, 0, 'v'},
+        {"line-number", no_argument, 0, 'n'},
+        {"count", no_argument, 0, 'c'},
+        {"help", no_argument, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+    
+    int opt;
+    while ((opt = getopt_long(argc, argv, "Eirlvnch", long_options, NULL)) != -1) {
+        switch (opt) {
+            case 'E':
+                use_regex = 1;
+                break;
+            case 'i':
+                opts.ignore_case = 1;
+                regex_flags |= REG_ICASE;
+                break;
+            case 'r':
+                opts.recursive = 1;
+                break;
+            case 'l':
+                opts.files_only = 1;
+                break;
+            case 'v':
+                opts.invert_match = 1;
+                break;
+            case 'n':
+                opts.line_number = 1;
+                break;
+            case 'c':
+                opts.count_only = 1;
+                break;
+            case 'h':
+                print_usage(argv[0]);
+                return 0;
+            default:
+                print_usage(argv[0]);
+                return 1;
+        }
+    }
+    
+    // 패턴이 없으면 에러
+    if (optind >= argc) {
+        fprintf(stderr, "grep: missing pattern\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    opts.pattern = argv[optind++];
+    
+    // 정규식 컴파일 (필요시)
+    if (use_regex) {
+        int reg_result = regcomp(&regex, opts.pattern, regex_flags);
+        if (reg_result != 0) {
+            char error_buf[256];
+            regerror(reg_result, &regex, error_buf, sizeof(error_buf));
+            fprintf(stderr, "grep: invalid regex '%s': %s\n", opts.pattern, error_buf);
+            return 1;
+        }
+    }
+    
+    int exit_status = 1;  // 매치되는 것이 없으면 1
+    
+    // 파일이 지정되지 않았으면 표준입력 사용
+    if (optind >= argc) {
+        int result = grep_stdin(&opts, &regex, use_regex);
+        if (result > 0) {
+            exit_status = 0;
+        }
+    } else {
+        // 지정된 파일들 처리
+        for (int i = optind; i < argc; i++) {
+            int result = grep_path(argv[i], &opts, &regex, use_regex);
+            if (result > 0) {
+                exit_status = 0;
+            }
+        }
+    }
+    
+    // 정규식 해제
+    if (use_regex) {
+        regfree(&regex);
+    }
+    
+    return exit_status;
+}
+```
+
+## chmod: 파일/디렉토리 권한 변경 (예: chmod 755 file.sh)
+- 표기법 (숫자, 심볼릭) 지원
+
+```
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <errno.h>
+#include <getopt.h>
+#include <ctype.h>
+
+#define MAX_PATH_LENGTH 4096
+
+// chmod 옵션을 저장하는 구조체
+typedef struct {
+    int recursive;       // -R: 재귀적 적용
+    int verbose;         // -v: 자세한 출력
+    int changes_only;    // -c: 변경된 것만 출력
+    int preserve_root;   // --preserve-root: 루트 디렉토리 보호
+} ChmodOptions;
+
+// 권한을 문자열로 변환
+void mode_to_string(mode_t mode, char *str) {
+    strcpy(str, "----------");
+    
+    // 파일 타입
+    if (S_ISDIR(mode)) str[0] = 'd';
+    else if (S_ISLNK(mode)) str[0] = 'l';
+    else if (S_ISCHR(mode)) str[0] = 'c';
+    else if (S_ISBLK(mode)) str[0] = 'b';
+    else if (S_ISFIFO(mode)) str[0] = 'p';
+    else if (S_ISSOCK(mode)) str[0] = 's';
+    
+    // 사용자 권한
+    if (mode & S_IRUSR) str[1] = 'r';
+    if (mode & S_IWUSR) str[2] = 'w';
+    if (mode & S_IXUSR) str[3] = 'x';
+    
+    // 그룹 권한
+    if (mode & S_IRGRP) str[4] = 'r';
+    if (mode & S_IWGRP) str[5] = 'w';
+    if (mode & S_IXGRP) str[6] = 'x';
+    
+    // 기타 권한
+    if (mode & S_IROTH) str[7] = 'r';
+    if (mode & S_IWOTH) str[8] = 'w';
+    if (mode & S_IXOTH) str[9] = 'x';
+    
+    // 특수 비트
+    if (mode & S_ISUID) str[3] = (mode & S_IXUSR) ? 's' : 'S';
+    if (mode & S_ISGID) str[6] = (mode & S_IXGRP) ? 's' : 'S';
+    if (mode & S_ISVTX) str[9] = (mode & S_IXOTH) ? 't' : 'T';
+}
+
+// 8진수 문자열을 mode_t로 변환
+mode_t parse_octal_mode(const char *str) {
+    mode_t mode = 0;
+    int len = strlen(str);
+    
+    // 3자리 또는 4자리 8진수만 허용
+    if (len < 3 || len > 4) {
+        return (mode_t)-1;
+    }
+    
+    // 모든 문자가 8진수인지 확인
+    for (int i = 0; i < len; i++) {
+        if (str[i] < '0' || str[i] > '7') {
+            return (mode_t)-1;
+        }
+    }
+    
+    // 4자리인 경우 (특수 비트 포함)
+    if (len == 4) {
+        int special = str[0] - '0';
+        if (special & 4) mode |= S_ISUID;  // setuid
+        if (special & 2) mode |= S_ISGID;  // setgid
+        if (special & 1) mode |= S_ISVTX;  // sticky bit
+        str++;  // 다음 3자리로 이동
+    }
+    
+    // 사용자 권한
+    int user = str[0] - '0';
+    if (user & 4) mode |= S_IRUSR;
+    if (user & 2) mode |= S_IWUSR;
+    if (user & 1) mode |= S_IXUSR;
+    
+    // 그룹 권한
+    int group = str[1] - '0';
+    if (group & 4) mode |= S_IRGRP;
+    if (group & 2) mode |= S_IWGRP;
+    if (group & 1) mode |= S_IXGRP;
+    
+    // 기타 권한
+    int other = str[2] - '0';
+    if (other & 4) mode |= S_IROTH;
+    if (other & 2) mode |= S_IWOTH;
+    if (other & 1) mode |= S_IXOTH;
+    
+    return mode;
+}
+
+// 심볼릭 모드 파싱 (예: u+x, go-w, a=r)
+mode_t parse_symbolic_mode(const char *str, mode_t current_mode) {
+    mode_t new_mode = current_mode;
+    char *mode_str = strdup(str);
+    char *token = strtok(mode_str, ",");
+    
+    while (token != NULL) {
+        char *ptr = token;
+        mode_t who_mask = 0;
+        char op = 0;
+        mode_t perm_mask = 0;
+        
+        // who 부분 파싱 (u, g, o, a)
+        while (*ptr && strchr("ugoa", *ptr)) {
+            switch (*ptr) {
+                case 'u': who_mask |= S_IRWXU | S_ISUID; break;
+                case 'g': who_mask |= S_IRWXG | S_ISGID; break;
+                case 'o': who_mask |= S_IRWXO | S_ISVTX; break;
+                case 'a': who_mask |= S_IRWXU | S_IRWXG | S_IRWXO; break;
+            }
+            ptr++;
+        }
+        
+        // who가 지정되지 않으면 기본값은 'a' (all)
+        if (who_mask == 0) {
+            who_mask = S_IRWXU | S_IRWXG | S_IRWXO;
+        }
+        
+        // 연산자 파싱 (+, -, =)
+        if (*ptr && strchr("+-=", *ptr)) {
+            op = *ptr++;
+        } else {
+            free(mode_str);
+            return (mode_t)-1;  // 잘못된 형식
+        }
+        
+        // 권한 부분 파싱 (r, w, x, s, t)
+        while (*ptr) {
+            switch (*ptr) {
+                case 'r':
+                    perm_mask |= (who_mask & S_IRWXU) ? S_IRUSR : 0;
+                    perm_mask |= (who_mask & S_IRWXG) ? S_IRGRP : 0;
+                    perm_mask |= (who_mask & S_IRWXO) ? S_IROTH : 0;
+                    break;
+                case 'w':
+                    perm_mask |= (who_mask & S_IRWXU) ? S_IWUSR : 0;
+                    perm_mask |= (who_mask & S_IRWXG) ? S_IWGRP : 0;
+                    perm_mask |= (who_mask & S_IRWXO) ? S_IWOTH : 0;
+                    break;
+                case 'x':
+                    perm_mask |= (who_mask & S_IRWXU) ? S_IXUSR : 0;
+                    perm_mask |= (who_mask & S_IRWXG) ? S_IXGRP : 0;
+                    perm_mask |= (who_mask & S_IRWXO) ? S_IXOTH : 0;
+                    break;
+                case 's':
+                    perm_mask |= (who_mask & S_ISUID) ? S_ISUID : 0;
+                    perm_mask |= (who_mask & S_ISGID) ? S_ISGID : 0;
+                    break;
+                case 't':
+                    perm_mask |= (who_mask & S_ISVTX) ? S_ISVTX : 0;
+                    break;
+                default:
+                    free(mode_str);
+                    return (mode_t)-1;  // 잘못된 권한 문자
+            }
+            ptr++;
+        }
+        
+        // 연산 수행
+        switch (op) {
+            case '+':
+                new_mode |= perm_mask;
+                break;
+            case '-':
+                new_mode &= ~perm_mask;
+                break;
+            case '=':
+                new_mode = (new_mode & ~who_mask) | perm_mask;
+                break;
+        }
+        
+        token = strtok(NULL, ",");
+    }
+    
+    free(mode_str);
+    return new_mode;
+}
+
+// 파일/디렉토리 권한 변경
+int chmod_file(const char *path, const char *mode_str, const ChmodOptions *opts) {
+    struct stat st;
+    
+    // 현재 파일 정보 가져오기
+    if (lstat(path, &st) != 0) {
+        fprintf(stderr, "chmod: cannot access '%s': %s\n", path, strerror(errno));
+        return -1;
+    }
+    
+    mode_t old_mode = st.st_mode;
+    mode_t new_mode;
+    
+    // 모드 파싱
+    if (isdigit(mode_str[0])) {
+        // 8진수 모드
+        new_mode = parse_octal_mode(mode_str);
+        if (new_mode == (mode_t)-1) {
+            fprintf(stderr, "chmod: invalid mode: '%s'\n", mode_str);
+            return -1;
+        }
+        // 파일 타입 비트는 유지
+        new_mode |= (old_mode & S_IFMT);
+    } else {
+        // 심볼릭 모드
+        new_mode = parse_symbolic_mode(mode_str, old_mode);
+        if (new_mode == (mode_t)-1) {
+            fprintf(stderr, "chmod: invalid mode: '%s'\n", mode_str);
+            return -1;
+        }
+    }
+    
+    // 권한 변경
+    if (chmod(path, new_mode) != 0) {
+        fprintf(stderr, "chmod: changing permissions of '%s': %s\n", path, strerror(errno));
+        return -1;
+    }
+    
+    // 출력 옵션 처리
+    if (opts->verbose || (opts->changes_only && old_mode != new_mode)) {
+        char old_str[11], new_str[11];
+        mode_to_string(old_mode, old_str);
+        mode_to_string(new_mode, new_str);
+        
+        if (old_mode != new_mode) {
+            printf("mode of '%s' changed from %04o (%s) to %04o (%s)\n",
+                   path, old_mode & 07777, old_str, new_mode & 07777, new_str);
+        } else if (opts->verbose) {
+            printf("mode of '%s' retained as %04o (%s)\n",
+                   path, new_mode & 07777, new_str);
+        }
+    }
+    
+    return 0;
+}
+
+// 디렉토리 재귀 처리
+int chmod_recursive(const char *dir_path, const char *mode_str, const ChmodOptions *opts) {
+    DIR *dir = opendir(dir_path);
+    if (!dir) {
+        fprintf(stderr, "chmod: cannot access '%s': %s\n", dir_path, strerror(errno));
+        return -1;
+    }
+    
+    struct dirent *entry;
+    struct stat st;
+    char full_path[MAX_PATH_LENGTH];
+    int result = 0;
+    
+    while ((entry = readdir(dir)) != NULL) {
+        // . 과 .. 건너뛰기
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        
+        // 전체 경로 생성
+        int path_len = snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+        if (path_len >= sizeof(full_path)) {
+            fprintf(stderr, "chmod: path too long: %s/%s\n", dir_path, entry->d_name);
+            continue;
+        }
+        
+        // 파일 정보 가져오기
+        if (lstat(full_path, &st) != 0) {
+            fprintf(stderr, "chmod: cannot access '%s': %s\n", full_path, strerror(errno));
+            result = -1;
+            continue;
+        }
+        
+        // 권한 변경
+        if (chmod_file(full_path, mode_str, opts) != 0) {
+            result = -1;
+        }
+        
+        // 디렉토리면 재귀 처리 (심볼릭 링크 제외)
+        if (S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode)) {
+            if (chmod_recursive(full_path, mode_str, opts) != 0) {
+                result = -1;
+            }
+        }
+    }
+    
+    closedir(dir);
+    return result;
+}
+
+void print_usage(const char *prog_name) {
+    printf("Usage: %s [OPTION]... MODE[,MODE]... FILE...\n", prog_name);
+    printf("       %s [OPTION]... OCTAL-MODE FILE...\n", prog_name);
+    printf("Change the mode of each FILE to MODE.\n\n");
+    printf("Options:\n");
+    printf("  -c, --changes          like verbose but report only when a change is made\n");
+    printf("  -R, --recursive        change files and directories recursively\n");
+    printf("  -v, --verbose          output a diagnostic for every file processed\n");
+    printf("      --preserve-root    fail to operate recursively on '/'\n");
+    printf("  -h, --help             display this help and exit\n\n");
+    printf("MODE is of the form '[ugoa]*([-+=]([rwxXst]*|[ugo]))+|[-+=][0-7]+'.\n\n");
+    printf("Examples:\n");
+    printf("  %s 755 file.txt          # Set permissions to 755\n", prog_name);
+    printf("  %s u+x script.sh         # Add execute permission for user\n", prog_name);
+    printf("  %s go-w file.txt         # Remove write permission for group and others\n", prog_name);
+    printf("  %s a=r file.txt          # Set read-only for all\n", prog_name);
+    printf("  %s -R 644 /path/to/dir   # Recursively set 644\n", prog_name);
+}
+
+int main(int argc, char *argv[]) {
+    ChmodOptions opts = {0};
+    
+    static struct option long_options[] = {
+        {"changes", no_argument, 0, 'c'},
+        {"recursive", no_argument, 0, 'R'},
+        {"verbose", no_argument, 0, 'v'},
+        {"preserve-root", no_argument, 0, 1},
+        {"help", no_argument, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+    
+    int opt;
+    while ((opt = getopt_long(argc, argv, "cRvh", long_options, NULL)) != -1) {
+        switch (opt) {
+            case 'c':
+                opts.changes_only = 1;
+                break;
+            case 'R':
+                opts.recursive = 1;
+                break;
+            case 'v':
+                opts.verbose = 1;
+                break;
+            case 1:  // --preserve-root
+                opts.preserve_root = 1;
+                break;
+            case 'h':
+                print_usage(argv[0]);
+                return 0;
+            default:
+                print_usage(argv[0]);
+                return 1;
+        }
+    }
+    
+    // 모드와 파일이 최소한 하나씩은 있어야 함
+    if (optind + 1 >= argc) {
+        fprintf(stderr, "chmod: missing operand\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    char *mode_str = argv[optind++];
+    int exit_status = 0;
+    
+    // 각 파일에 대해 권한 변경
+    for (int i = optind; i < argc; i++) {
+        char *file_path = argv[i];
+        
+        // --preserve-root 옵션 확인
+        if (opts.preserve_root && opts.recursive && strcmp(file_path, "/") == 0) {
+            fprintf(stderr, "chmod: it is dangerous to operate recursively on '/'\n");
+            fprintf(stderr, "chmod: use --no-preserve-root to override this failsafe\n");
+            exit_status = 1;
+            continue;
+        }
+        
+        struct stat st;
+        if (lstat(file_path, &st) != 0) {
+            fprintf(stderr, "chmod: cannot access '%s': %s\n", file_path, strerror(errno));
+            exit_status = 1;
+            continue;
+        }
+        
+        // 권한 변경
+        if (chmod_file(file_path, mode_str, &opts) != 0) {
+            exit_status = 1;
+        }
+        
+        // 디렉토리이고 재귀 옵션이 켜져있으면 재귀 처리
+        if (opts.recursive && S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode)) {
+            if (chmod_recursive(file_path, mode_str, &opts) != 0) {
+                exit_status = 1;
+            }
+        }
+    }
+    
+    return exit_status;
+}
+```
 
 
 
