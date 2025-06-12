@@ -11650,7 +11650,6 @@ int get_mtu(const char *interface) {
 // 특정 인터페이스 정보 출력
 void show_interface(const char *interface_name) {
     struct ifaddrs *ifaddr, *ifa;
-    char host[NI_MAXHOST];
     char mac_str[18];
     char flags_str[256];
     char rx_bytes_str[32], tx_bytes_str[32];
